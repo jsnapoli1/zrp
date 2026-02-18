@@ -48,6 +48,16 @@ func main() {
 		http.ServeFile(w, r, "static/index.html")
 	})
 
+	// File serving
+	mux.HandleFunc("/files/", func(w http.ResponseWriter, r *http.Request) {
+		filename := strings.TrimPrefix(r.URL.Path, "/files/")
+		if filename == "" {
+			http.NotFound(w, r)
+			return
+		}
+		handleServeFile(w, r, filename)
+	})
+
 	// Auth routes
 	mux.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
@@ -280,6 +290,24 @@ func main() {
 			handleDeleteAPIKey(w, r, parts[1])
 		case parts[0] == "apikeys" && len(parts) == 2 && r.Method == "PUT":
 			handleToggleAPIKey(w, r, parts[1])
+
+		// Users
+		case parts[0] == "users" && len(parts) == 1 && r.Method == "GET":
+			handleListUsers(w, r)
+		case parts[0] == "users" && len(parts) == 1 && r.Method == "POST":
+			handleCreateUser(w, r)
+		case parts[0] == "users" && len(parts) == 2 && r.Method == "PUT":
+			handleUpdateUser(w, r, parts[1])
+		case parts[0] == "users" && len(parts) == 3 && parts[2] == "password" && r.Method == "PUT":
+			handleResetPassword(w, r, parts[1])
+
+		// Attachments
+		case parts[0] == "attachments" && len(parts) == 1 && r.Method == "POST":
+			handleUploadAttachment(w, r)
+		case parts[0] == "attachments" && len(parts) == 1 && r.Method == "GET":
+			handleListAttachments(w, r)
+		case parts[0] == "attachments" && len(parts) == 2 && r.Method == "DELETE":
+			handleDeleteAttachment(w, r, parts[1])
 
 		// Notifications
 		case parts[0] == "notifications" && len(parts) == 1 && r.Method == "GET":

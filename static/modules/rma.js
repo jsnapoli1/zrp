@@ -34,9 +34,10 @@ window.module_rma = {
     });
     window._rmaEdit = async (id) => {
       const r = (await api('GET','rmas/'+id)).data;
-      showModal('RMA: '+id, form(r), async (o) => {
+      const o = showModal('RMA: '+id, form(r) + attachmentsSection('rma', id), async (o) => {
         try { await api('PUT','rmas/'+id,getModalValues(o)); toast('Updated'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
       });
+      initAttachments(o, 'rma', id);
     };
     load();
   }

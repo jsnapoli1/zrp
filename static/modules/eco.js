@@ -139,11 +139,12 @@ window.module_ecos = {
         <div class="flex gap-2 mt-4">
           ${e.status==='review'||e.status==='draft'?`<button class="btn btn-success" id="eco-approve">✓ Approve</button>`:''}
           ${e.status==='approved'?`<button class="btn btn-primary" id="eco-implement">🚀 Implement</button>`:''}
-        </div>`, async (overlay) => {
+        </div>` + attachmentsSection('eco', id), async (overlay) => {
         const v = getModalValues(overlay);
         try { await api('PUT', 'ecos/' + id, v); toast('ECO updated'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); }
       });
       setupIPNAutocomplete(overlay, 'eco-ipns');
+      initAttachments(overlay, 'eco', id);
       overlay.querySelector('#eco-approve')?.addEventListener('click', async () => {
         await api('POST', 'ecos/' + id + '/approve'); toast('ECO approved'); overlay.remove(); load();
       });

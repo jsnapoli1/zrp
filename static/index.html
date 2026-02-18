@@ -152,6 +152,7 @@
       <div class="sidebar-group">Sales</div>
       <a class="sidebar-link" data-route="quotes" onclick="navigate('quotes')">💰 Quotes</a>
       <div class="sidebar-group">Admin</div>
+      <a class="sidebar-link" data-route="users" onclick="navigate('users')">👥 Users</a>
       <a class="sidebar-link" data-route="audit" onclick="navigate('audit')">📋 Audit Log</a>
       <a class="sidebar-link" data-route="apikeys" onclick="navigate('apikeys')">🔑 API Keys</a>
     </nav>
@@ -263,7 +264,7 @@ const moduleNames = {
   dashboard: 'Dashboard', parts: 'Parts (PLM)', ecos: 'ECOs', docs: 'Documents',
   inventory: 'Inventory', procurement: 'Purchase Orders', vendors: 'Vendors',
   workorders: 'Work Orders', testing: 'Test Records', ncr: 'NCRs',
-  devices: 'Devices', firmware: 'Firmware', rma: 'RMAs', quotes: 'Quotes', audit: 'Audit Log', apikeys: 'API Keys'
+  devices: 'Devices', firmware: 'Firmware', rma: 'RMAs', quotes: 'Quotes', users: 'Users', audit: 'Audit Log', apikeys: 'API Keys'
 };
 
 function navigate(route) {
@@ -521,6 +522,77 @@ function updateDarkIcon() {
   document.getElementById('dark-icon-sun').classList.toggle('hidden', !isDark);
 }
 document.addEventListener('DOMContentLoaded', updateDarkIcon);
+
+// Attachments helper
+function attachmentsSection(module, recordId) {
+  return `<div class="mt-4 border-t pt-3" id="attachments-section">
+    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">📎 Attachments</h3>
+    <div id="att-list" class="text-sm text-gray-400 mb-2">Loading...</div>
+    <div id="att-dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center text-sm text-gray-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 transition-colors">
+      Drop files here or click to upload
+      <input type="file" id="att-file-input" class="hidden" multiple>
+    </div>
+  </div>`;
+}
+
+async function initAttachments(overlay, module, recordId) {
+  const section = overlay.querySelector('#attachments-section');
+  if (!section) return;
+  const listEl = section.querySelector('#att-list');
+  const dropzone = section.querySelector('#att-dropzone');
+  const fileInput = section.querySelector('#att-file-input');
+
+  async function loadAtts() {
+    const res = await api('GET', `attachments?module=${module}&record_id=${encodeURIComponent(recordId)}`);
+    const atts = res.data || [];
+    if (atts.length === 0) { listEl.innerHTML = '<span class="text-gray-400 text-xs">No attachments</span>'; return; }
+    listEl.innerHTML = atts.map(a => {
+      const size = a.size_bytes > 1048576 ? (a.size_bytes/1048576).toFixed(1)+'MB' : (a.size_bytes/1024).toFixed(0)+'KB';
+      return `<div class="flex items-center justify-between py-1 border-b border-gray-100">
+        <a href="/files/${a.filename}" target="_blank" class="text-blue-600 hover:underline text-xs">${a.original_name}</a>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">${size}</span>
+          <button class="text-red-400 hover:text-red-600 text-xs" onclick="window._deleteAtt(${a.id})">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  window._deleteAtt = async (id) => {
+    if (!confirm('Delete this attachment?')) return;
+    try { await api('DELETE', 'attachments/' + id); loadAtts(); } catch(e) { toast(e.message, 'error'); }
+  };
+
+  async function uploadFile(file) {
+    const fd = new FormData();
+    fd.append('module', module);
+    fd.append('record_id', recordId);
+    fd.append('file', file);
+    const res = await fetch('/api/v1/attachments', { method: 'POST', body: fd });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Upload failed'); }
+    return res.json();
+  }
+
+  dropzone.onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    for (const f of fileInput.files) {
+      try { await uploadFile(f); toast('Uploaded ' + f.name); } catch(e) { toast(e.message, 'error'); }
+    }
+    fileInput.value = '';
+    loadAtts();
+  };
+  dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('border-blue-400'); };
+  dropzone.ondragleave = () => { dropzone.classList.remove('border-blue-400'); };
+  dropzone.ondrop = async (e) => {
+    e.preventDefault(); dropzone.classList.remove('border-blue-400');
+    for (const f of e.dataTransfer.files) {
+      try { await uploadFile(f); toast('Uploaded ' + f.name); } catch(e2) { toast(e2.message, 'error'); }
+    }
+    loadAtts();
+  };
+
+  loadAtts();
+}
 
 // Keyboard Shortcuts
 let gPending = false;

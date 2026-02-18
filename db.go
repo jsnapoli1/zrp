@@ -169,6 +169,17 @@ func runMigrations() error {
 			expires_at DATETIME,
 			enabled INTEGER DEFAULT 1
 		)`,
+		`CREATE TABLE IF NOT EXISTS attachments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			module TEXT NOT NULL,
+			record_id TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			original_name TEXT NOT NULL,
+			size_bytes INTEGER,
+			mime_type TEXT,
+			uploaded_by TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE IF NOT EXISTS notifications (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			type TEXT NOT NULL,
@@ -190,6 +201,7 @@ func runMigrations() error {
 	alterStmts := []string{
 		"ALTER TABLE inventory ADD COLUMN description TEXT DEFAULT ''",
 		"ALTER TABLE inventory ADD COLUMN mpn TEXT DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1",
 	}
 	for _, s := range alterStmts {
 		db.Exec(s) // ignore errors (column already exists)
@@ -208,6 +220,27 @@ func seedDB() {
 		} else {
 			db.Exec("INSERT INTO users (username, password_hash, display_name, role) VALUES (?, ?, ?, ?)",
 				"admin", string(hash), "Administrator", "admin")
+		}
+	}
+
+	// Seed engineer user
+	var engCount int
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'engineer'").Scan(&engCount)
+	if engCount == 0 {
+		hash, err := bcrypt.GenerateFromPassword([]byte("zonit123"), bcrypt.DefaultCost)
+		if err == nil {
+			db.Exec("INSERT INTO users (username, password_hash, display_name, role, active) VALUES (?, ?, ?, ?, 1)",
+				"engineer", string(hash), "Engineer", "user")
+		}
+	}
+	// Seed viewer user
+	var viewCount int
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'viewer'").Scan(&viewCount)
+	if viewCount == 0 {
+		hash, err := bcrypt.GenerateFromPassword([]byte("zonit123"), bcrypt.DefaultCost)
+		if err == nil {
+			db.Exec("INSERT INTO users (username, password_hash, display_name, role, active) VALUES (?, ?, ?, ?, 1)",
+				"viewer", string(hash), "Viewer", "readonly")
 		}
 	}
 

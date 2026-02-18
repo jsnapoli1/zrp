@@ -45,9 +45,10 @@ window.module_ncr = {
     });
     window._ncrEdit = async (id) => {
       const n = (await api('GET','ncrs/'+id)).data;
-      showModal('NCR: '+id, form(n), async (o) => {
+      const o = showModal('NCR: '+id, form(n) + attachmentsSection('ncr', id), async (o) => {
         try { await api('PUT','ncrs/'+id,getModalValues(o)); toast('NCR updated'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
       });
+      initAttachments(o, 'ncr', id);
     };
     load();
   }

@@ -39,10 +39,11 @@ window.module_workorders = {
     });
     window._woEdit = async (id) => {
       const w = (await api('GET','workorders/'+id)).data;
-      showModal('WO: '+id, form(w)+`<div class="flex gap-2 mt-3"><button class="btn btn-secondary" id="wo-bom">📋 View BOM</button><button class="btn btn-secondary" onclick="window.open('/api/v1/workorders/${id}/pdf','_blank')">🖨️ Print Traveler</button></div>`, async (o) => {
+      const overlay = showModal('WO: '+id, form(w)+`<div class="flex gap-2 mt-3"><button class="btn btn-secondary" id="wo-bom">📋 View BOM</button><button class="btn btn-secondary" onclick="window.open('/api/v1/workorders/${id}/pdf','_blank')">🖨️ Print Traveler</button></div>` + attachmentsSection('workorder', id), async (o) => {
         const v = getModalValues(o); v.qty = parseInt(v.qty)||1;
         try { await api('PUT','workorders/'+id,v); toast('Updated'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
       });
+      initAttachments(overlay, 'workorder', id);
       document.getElementById('wo-bom')?.addEventListener('click', async () => {
         const bom = (await api('GET','workorders/'+id+'/bom')).data;
         const lines = bom.bom||[];

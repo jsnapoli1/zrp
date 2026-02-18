@@ -31,8 +31,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var id int
 	var passwordHash, displayName, role string
-	err := db.QueryRow("SELECT id, password_hash, display_name, role FROM users WHERE username = ?", req.Username).
-		Scan(&id, &passwordHash, &displayName, &role)
+	var active int
+	err := db.QueryRow("SELECT id, password_hash, display_name, role, active FROM users WHERE username = ?", req.Username).
+		Scan(&id, &passwordHash, &displayName, &role, &active)
 	if err != nil {
 		jsonErr(w, "Invalid username or password", 401)
 		return
@@ -40,6 +41,11 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
 		jsonErr(w, "Invalid username or password", 401)
+		return
+	}
+
+	if active == 0 {
+		jsonErr(w, "Account deactivated", 403)
 		return
 	}
 
