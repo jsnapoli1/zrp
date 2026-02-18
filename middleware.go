@@ -28,13 +28,12 @@ func requireAuth(next http.Handler) http.Handler {
 		path := r.URL.Path
 
 		// Exempt paths
-		if path == "/" || path == "/index.html" ||
-			strings.HasPrefix(path, "/static/") ||
+		if path == "/" ||
+			strings.HasPrefix(path, "/assets/") ||
 			strings.HasPrefix(path, "/auth/") ||
 			strings.HasPrefix(path, "/files/") ||
-			path == "/login" ||
-			path == "/api/v1/openapi.json" ||
-			strings.HasPrefix(path, "/docs") {
+			path == "/vite.svg" ||
+			path == "/api/v1/openapi.json" {
 			next.ServeHTTP(w, r)
 			return
 		}

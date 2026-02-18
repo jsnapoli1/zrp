@@ -1,7 +1,0 @@
-{{define "modal"}}
-<div id="modal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="modal-content" id="modal-content">
-    {{block "modal-body" .}}{{end}}
-  </div>
-</div>
-{{end}}

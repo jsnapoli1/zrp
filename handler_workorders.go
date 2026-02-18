@@ -10,13 +10,9 @@ import (
 
 func handleListWorkOrders(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders ORDER BY created_at DESC")
-	if err != nil { 
-		if isHTMX(r) {
-			http.Error(w, err.Error(), 500)
-		} else {
-			jsonErr(w, err.Error(), 500)
-		}
-		return 
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
 	}
 	defer rows.Close()
 	var items []WorkOrder
@@ -28,21 +24,7 @@ func handleListWorkOrders(w http.ResponseWriter, r *http.Request) {
 		items = append(items, wo)
 	}
 	if items == nil { items = []WorkOrder{} }
-	
-	if isHTMX(r) {
-		// Return just the table for HTMX updates
-		data := PageData{WorkOrders: items}
-		renderPartial(w, []string{"templates/workorders/list.html"}, "workorders-table", data)
-	} else {
-		// Full page render
-		data := PageData{
-			Title:      "Work Orders",
-			ActiveNav:  "workorders", 
-			WorkOrders: items,
-			User:       getCurrentUser(r),
-		}
-		render(w, []string{"templates/workorders/list.html"}, "layout", data)
-	}
+	jsonResp(w, items)
 }
 
 func handleGetWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
@@ -50,33 +32,19 @@ func handleGetWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 	var sa, ca sql.NullString
 	err := db.QueryRow("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
 		Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
-	if err != nil { 
-		if isHTMX(r) {
-			http.Error(w, "Work order not found", 404)
-		} else {
-			jsonErr(w, "not found", 404)
-		}
-		return 
+	if err != nil {
+		jsonErr(w, "not found", 404)
+		return
 	}
 	wo.StartedAt = sp(sa); wo.CompletedAt = sp(ca)
-	
-	if isHTMX(r) {
-		data := PageData{WorkOrder: wo}
-		renderPartial(w, []string{"templates/workorders/form.html"}, "workorders-edit-form", data)
-	} else {
-		jsonResp(w, wo)
-	}
+	jsonResp(w, wo)
 }
 
 func handleCreateWorkOrder(w http.ResponseWriter, r *http.Request) {
 	var wo WorkOrder
-	if err := decodeBody(r, &wo); err != nil { 
-		if isHTMX(r) {
-			http.Error(w, "Invalid form data", 400)
-		} else {
-			jsonErr(w, "invalid body", 400)
-		}
-		return 
+	if err := decodeBody(r, &wo); err != nil {
+		jsonErr(w, "invalid body", 400)
+		return
 	}
 	wo.ID = nextID("WO", "work_orders", 4)
 	if wo.Status == "" { wo.Status = "open" }
@@ -85,56 +53,31 @@ func handleCreateWorkOrder(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	_, err := db.Exec("INSERT INTO work_orders (id,assembly_ipn,qty,status,priority,notes,created_at) VALUES (?,?,?,?,?,?,?)",
 		wo.ID, wo.AssemblyIPN, wo.Qty, wo.Status, wo.Priority, wo.Notes, now)
-	if err != nil { 
-		if isHTMX(r) {
-			http.Error(w, err.Error(), 500)
-		} else {
-			jsonErr(w, err.Error(), 500)
-		}
-		return 
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
 	}
 	wo.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "workorder", wo.ID, "Created WO "+wo.ID+" for "+wo.AssemblyIPN)
-	
-	if isHTMX(r) {
-		data := PageData{WorkOrder: wo}
-		renderPartial(w, []string{"templates/workorders/form.html"}, "workorders-create-success", data)
-	} else {
-		jsonResp(w, wo)
-	}
+	jsonResp(w, wo)
 }
 
 func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 	var wo WorkOrder
-	if err := decodeBody(r, &wo); err != nil { 
-		if isHTMX(r) {
-			http.Error(w, "Invalid form data", 400)
-		} else {
-			jsonErr(w, "invalid body", 400)
-		}
-		return 
+	if err := decodeBody(r, &wo); err != nil {
+		jsonErr(w, "invalid body", 400)
+		return
 	}
 	now := time.Now().Format("2006-01-02 15:04:05")
 	_, err := db.Exec("UPDATE work_orders SET assembly_ipn=?,qty=?,status=?,priority=?,notes=?,started_at=CASE WHEN ?='in_progress' AND started_at IS NULL THEN ? ELSE started_at END,completed_at=CASE WHEN ?='completed' THEN ? ELSE completed_at END WHERE id=?",
 		wo.AssemblyIPN, wo.Qty, wo.Status, wo.Priority, wo.Notes, wo.Status, now, wo.Status, now, id)
-	if err != nil { 
-		if isHTMX(r) {
-			http.Error(w, err.Error(), 500)
-		} else {
-			jsonErr(w, err.Error(), 500)
-		}
-		return 
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
 	}
 	logAudit(db, getUsername(r), "updated", "workorder", id, "Updated WO "+id+": status="+wo.Status)
 	go emailOnOverdueWorkOrder(id)
-	
-	if isHTMX(r) {
-		wo.ID = id // Ensure ID is set
-		data := PageData{WorkOrder: wo}
-		renderPartial(w, []string{"templates/workorders/form.html"}, "workorders-update-success", data)
-	} else {
-		handleGetWorkOrder(w, r, id)
-	}
+	handleGetWorkOrder(w, r, id)
 }
 
 func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
@@ -151,7 +94,6 @@ func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
 		Shortage    float64 `json:"shortage"`
 		Status      string  `json:"status"`
 	}
-	// Get inventory items and enrich with part descriptions
 	rows, _ := db.Query("SELECT ipn, qty_on_hand FROM inventory")
 	var bom []BOMLine
 	if rows != nil {
@@ -159,7 +101,7 @@ func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
 		for rows.Next() {
 			var bl BOMLine
 			rows.Scan(&bl.IPN, &bl.QtyOnHand)
-			bl.QtyRequired = float64(qty) // simplified: 1 per unit × WO qty
+			bl.QtyRequired = float64(qty)
 			bl.Shortage = bl.QtyRequired - bl.QtyOnHand
 			if bl.Shortage < 0 { bl.Shortage = 0 }
 			if bl.QtyOnHand >= bl.QtyRequired {
@@ -169,7 +111,6 @@ func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
 			} else {
 				bl.Status = "shortage"
 			}
-			// Try to get description from parts DB
 			fields, err := getPartByIPN(partsDir, bl.IPN)
 			if err == nil {
 				for k, v := range fields {
@@ -183,26 +124,7 @@ func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 	if bom == nil { bom = []BOMLine{} }
-	if isHTMX(r) {
-		// Get the work order for the template
-		var wo WorkOrder
-		var sa, ca sql.NullString
-		db.QueryRow("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
-			Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
-		wo.StartedAt = sp(sa); wo.CompletedAt = sp(ca)
-		
-		// Create a custom template data structure
-		templateData := struct {
-			PageData
-			BOMLines []BOMLine
-		}{
-			PageData: PageData{WorkOrder: wo},
-			BOMLines: bom,
-		}
-		renderPartial(w, []string{"templates/workorders/bom.html"}, "workorders-bom", templateData)
-	} else {
-		jsonResp(w, map[string]interface{}{"wo_id": id, "assembly_ipn": assemblyIPN, "qty": qty, "bom": bom})
-	}
+	jsonResp(w, map[string]interface{}{"wo_id": id, "assembly_ipn": assemblyIPN, "qty": qty, "bom": bom})
 }
 
 func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
@@ -217,7 +139,6 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 	wo.StartedAt = sp(sa)
 	wo.CompletedAt = sp(ca)
 
-	// Get BOM data
 	type BOMLine struct {
 		IPN          string
 		Description  string
@@ -254,7 +175,6 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 
-	// Get assembly description
 	assemblyDesc := ""
 	if fields, ferr := getPartByIPN(partsDir, wo.AssemblyIPN); ferr == nil {
 		for k, v := range fields {
@@ -265,7 +185,6 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 
-	// Build BOM rows HTML
 	bomRows := ""
 	for _, bl := range bom {
 		bomRows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td style="text-align:center">%.0f</td><td>%s</td></tr>`,
@@ -303,7 +222,7 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 <div class="header">
   <div class="header-left">
     <h1>ZRP — Work Order Traveler</h1>
-    <div style="font-size:10pt;color:#555">` + companyName + `</div>
+    <div style="font-size:10pt;color:#555">`+companyName+`</div>
   </div>
   <div class="header-right">
     <div><strong>WO:</strong> %s</div>
@@ -345,13 +264,4 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
-}
-
-func handleWorkOrdersNewForm(w http.ResponseWriter, r *http.Request) {
-	if !isHTMX(r) {
-		http.Error(w, "Direct access not supported", 404)
-		return
-	}
-	
-	renderPartial(w, []string{"templates/workorders/form.html"}, "workorders-new-form", PageData{})
 }

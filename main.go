@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -39,9 +40,8 @@ func main() {
 		log.Fatal("DB init failed:", err)
 	}
 	seedDB()
-	initTemplates()
 
-	// Start background notification generator (run once after short delay, then every 5 min)
+	// Start background notification generator
 	go func() {
 		time.Sleep(5 * time.Second)
 		generateNotifications()
@@ -55,271 +55,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Static files
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
-	// Server-rendered page routes
-	mux.HandleFunc("/login", pageLogin)
-	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			pageLogout(w, r)
-		} else {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-		}
-	})
-	mux.HandleFunc("/dashboard", pageDashboard)
-	mux.HandleFunc("/dashboard/kpi", pageDashboardKPI)
-	mux.HandleFunc("/dashboard/activity", pageDashboardActivity)
-	mux.HandleFunc("/parts", pagePartsList)
-	mux.HandleFunc("/parts/", func(w http.ResponseWriter, r *http.Request) {
-		ipn := strings.TrimPrefix(r.URL.Path, "/parts/")
-		if ipn == "" {
-			pagePartsList(w, r)
-			return
-		}
-		pagePartDetail(w, r, ipn)
-	})
-	mux.HandleFunc("/ecos", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			pageECOCreate(w, r)
-			return
-		}
-		pageECOsList(w, r)
-	})
-	mux.HandleFunc("/ecos/new", pageECONew)
-	mux.HandleFunc("/ecos/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/ecos/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 2 && parts[1] == "approve" && r.Method == "POST" {
-			pageECOApprove(w, r, parts[0])
-			return
-		}
-		if len(parts) == 2 && parts[1] == "implement" && r.Method == "POST" {
-			pageECOImplement(w, r, parts[0])
-			return
-		}
-		if len(parts) >= 1 && parts[0] != "" {
-			pageECODetail(w, r, parts[0])
-			return
-		}
-		pageECOsList(w, r)
-	})
-
-	mux.HandleFunc("/quotes", pageQuotesList)
-	mux.HandleFunc("/quotes/new", pageQuoteNew)
-	mux.HandleFunc("/quotes/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/quotes/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 2 && parts[1] == "edit" && r.Method == "GET" {
-			pageQuoteEdit(w, r, parts[0])
-			return
-		}
-		if len(parts) >= 1 && parts[0] != "" {
-			pageQuoteDetail(w, r, parts[0])
-			return
-		}
-		pageQuotesList(w, r)
-	})
-
-	mux.HandleFunc("/calendar", pageCalendar)
-
-	mux.HandleFunc("/reports", pageReportsList)
-	mux.HandleFunc("/reports/inventory-valuation", pageReportInventoryValuation)
-	mux.HandleFunc("/reports/open-ecos", pageReportOpenECOs)
-	mux.HandleFunc("/reports/wo-throughput", pageReportWOThroughput)
-	mux.HandleFunc("/reports/low-stock", pageReportLowStock)
-	mux.HandleFunc("/reports/ncr-summary", pageReportNCRSummary)
-
-	// Vendors
-	mux.HandleFunc("/vendors", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			handleCreateVendor(w, r)
-			return
-		}
-		handleListVendors(w, r)
-	})
-	mux.HandleFunc("/vendors/new", handleVendorsNewForm)
-	mux.HandleFunc("/vendors/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/vendors/")
-		if path == "" {
-			handleListVendors(w, r)
-			return
-		}
-		switch r.Method {
-		case "GET":
-			handleGetVendor(w, r, path)
-		case "PUT":
-			handleUpdateVendor(w, r, path)
-		case "DELETE":
-			handleDeleteVendor(w, r, path)
-		default:
-			http.Error(w, "Method not allowed", 405)
-		}
-	})
-
-	// Work Orders
-	mux.HandleFunc("/workorders", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			handleCreateWorkOrder(w, r)
-			return
-		}
-		handleListWorkOrders(w, r)
-	})
-	mux.HandleFunc("/workorders/new", handleWorkOrdersNewForm)
-	mux.HandleFunc("/workorders/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/workorders/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 2 && parts[1] == "bom" && r.Method == "GET" {
-			handleWorkOrderBOM(w, r, parts[0])
-			return
-		}
-		if len(parts) == 2 && parts[1] == "pdf" && r.Method == "GET" {
-			handleWorkOrderPDF(w, r, parts[0])
-			return
-		}
-		if len(parts) >= 1 && parts[0] != "" {
-			switch r.Method {
-			case "GET":
-				handleGetWorkOrder(w, r, parts[0])
-			case "PUT":
-				handleUpdateWorkOrder(w, r, parts[0])
-			default:
-				http.Error(w, "Method not allowed", 405)
-			}
-			return
-		}
-		handleListWorkOrders(w, r)
-	})
-
-	// Inventory
-	mux.HandleFunc("/inventory", pageInventoryList)
-	mux.HandleFunc("/inventory/receive-form", pageInventoryReceiveForm)
-	mux.HandleFunc("/inventory/receive", pageInventoryReceive)
-	mux.HandleFunc("/inventory/", func(w http.ResponseWriter, r *http.Request) {
-		ipn := strings.TrimPrefix(r.URL.Path, "/inventory/")
-		if ipn == "" { pageInventoryList(w, r); return }
-		pageInventoryDetail(w, r, ipn)
-	})
-
-	// Procurement
-	mux.HandleFunc("/procurement", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageProcurementCreate(w, r); return }
-		pageProcurementList(w, r)
-	})
-	mux.HandleFunc("/procurement/new", pageProcurementNew)
-	mux.HandleFunc("/procurement/generate-from-wo", func(w http.ResponseWriter, r *http.Request) {
-		handleGeneratePOFromWO(w, r)
-	})
-	mux.HandleFunc("/procurement/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/procurement/")
-		if id == "" { pageProcurementList(w, r); return }
-		pageProcurementDetail(w, r, id)
-	})
-
-	// NCRs
-	mux.HandleFunc("/ncr", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageNCRCreate(w, r); return }
-		pageNCRsList(w, r)
-	})
-	mux.HandleFunc("/ncr/new", pageNCRNew)
-	mux.HandleFunc("/ncr/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/ncr/")
-		if id == "" { pageNCRsList(w, r); return }
-		pageNCRDetail(w, r, id)
-	})
-
-	// Test Records
-	mux.HandleFunc("/testing", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageTestingCreate(w, r); return }
-		pageTestingList(w, r)
-	})
-	mux.HandleFunc("/testing/new", pageTestingNew)
-
-	// RMAs
-	mux.HandleFunc("/rma", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageRMACreate(w, r); return }
-		pageRMAsList(w, r)
-	})
-	mux.HandleFunc("/rma/new", pageRMANew)
-	mux.HandleFunc("/rma/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/rma/")
-		if id == "" { pageRMAsList(w, r); return }
-		pageRMADetail(w, r, id)
-	})
-
-	// Devices
-	mux.HandleFunc("/devices", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageDeviceCreate(w, r); return }
-		pageDevicesList(w, r)
-	})
-	mux.HandleFunc("/devices/new", pageDeviceNew)
-	mux.HandleFunc("/devices/", func(w http.ResponseWriter, r *http.Request) {
-		sn := strings.TrimPrefix(r.URL.Path, "/devices/")
-		if sn == "" { pageDevicesList(w, r); return }
-		pageDeviceDetail(w, r, sn)
-	})
-
-	// Firmware Campaigns
-	mux.HandleFunc("/firmware", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageFirmwareCreate(w, r); return }
-		pageFirmwareList(w, r)
-	})
-	mux.HandleFunc("/firmware/new", pageFirmwareNew)
-	mux.HandleFunc("/firmware/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/firmware/")
-		if id == "" { pageFirmwareList(w, r); return }
-		pageFirmwareDetail(w, r, id)
-	})
-
-	// Audit Log
-	mux.HandleFunc("/audit", pageAuditList)
-
-	// Users
-	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageUserCreate(w, r); return }
-		pageUsersList(w, r)
-	})
-	mux.HandleFunc("/users/new", pageUserNew)
-
-	// API Keys
-	mux.HandleFunc("/apikeys", pageAPIKeysList)
-	mux.HandleFunc("/apikeys/generate", pageAPIKeyGenerate)
-
-	// Email Settings
-	mux.HandleFunc("/email", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageEmailSettingsUpdate(w, r); return }
-		pageEmailSettings(w, r)
-	})
-
-	// Documents
-	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" { pageDocCreate(w, r); return }
-		pageDocsList(w, r)
-	})
-	mux.HandleFunc("/docs/new", pageDocNew)
-	mux.HandleFunc("/docs/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/docs/")
-		if id == "" { pageDocsList(w, r); return }
-		pageDocDetail(w, r, id)
-	})
-
-	// Global search
-	mux.HandleFunc("/search", pageSearch)
-
-	// SPA fallback
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
-			return
-		}
-		if r.URL.Path == "/index.html" {
-			http.ServeFile(w, r, "static/index.html")
-			return
-		}
-		http.ServeFile(w, r, "static/index.html")
-	})
-
-	// File serving
+	// File serving (uploaded attachments)
 	mux.HandleFunc("/files/", func(w http.ResponseWriter, r *http.Request) {
 		filename := strings.TrimPrefix(r.URL.Path, "/files/")
 		if filename == "" {
@@ -348,7 +84,7 @@ func main() {
 		handleMe(w, r)
 	})
 
-	// API routes - using a simple router
+	// API routes
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
@@ -602,7 +338,6 @@ func main() {
 
 		// Prices
 		case parts[0] == "prices" && len(parts) == 2 && parts[1] != "" && r.Method == "GET":
-			// Check if it's a numeric ID (delete) or IPN (list)
 			handleListPrices(w, r, parts[1])
 		case parts[0] == "prices" && len(parts) == 3 && parts[2] == "trend" && r.Method == "GET":
 			handlePriceTrend(w, r, parts[1])
@@ -654,6 +389,25 @@ func main() {
 		default:
 			json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
 		}
+	})
+
+	// Serve React frontend (SPA with fallback to index.html)
+	frontendDir := "frontend/dist"
+	frontendFS := http.Dir(frontendDir)
+	fileServer := http.FileServer(frontendFS)
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Try to serve the file directly (JS, CSS, images, etc.)
+		path := r.URL.Path
+		if path != "/" {
+			// Check if file exists in frontend/dist
+			if f, err := fs.Stat(os.DirFS(frontendDir), strings.TrimPrefix(path, "/")); err == nil && !f.IsDir() {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		// SPA fallback: serve index.html for all unmatched routes
+		http.ServeFile(w, r, frontendDir+"/index.html")
 	})
 
 	// Top-level mux: health check bypasses auth
