@@ -83,7 +83,7 @@
   --sidebar-foreground: hsl(240 5.3% 26.1%);
   --sidebar-primary: hsl(240 5.9% 10%);
   --sidebar-primary-foreground: hsl(0 0% 98%);
-  --sidebar-accent: hsl(240 4.8% 95.9%);
+  --sidebar-accent: hsl(240 5% 90%);
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 91%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
@@ -98,6 +98,37 @@
   --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+}
+
+/* Explicit hover states for visibility */
+@layer components {
+  /* Sidebar links - clear hover feedback */
+  [data-sidebar="menu-button"]:hover {
+    background-color: hsl(240 5% 88%) !important;
+  }
+  .dark [data-sidebar="menu-button"]:hover {
+    background-color: hsl(240 4% 20%) !important;
+  }
+  [data-sidebar="menu-button"][data-active="true"] {
+    background-color: hsl(221 83% 95%) !important;
+    color: hsl(221 83% 53%) !important;
+    font-weight: 500;
+  }
+  .dark [data-sidebar="menu-button"][data-active="true"] {
+    background-color: hsl(221 83% 15%) !important;
+    color: hsl(221 83% 70%) !important;
+  }
+  /* Table rows - highlight on hover */
+  tbody tr:hover {
+    background-color: hsl(240 5% 96%);
+  }
+  .dark tbody tr:hover {
+    background-color: hsl(240 4% 14%);
+  }
+  /* Cards - subtle lift on hover when clickable */
+  .cursor-pointer:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
 }
 
 @theme inline {
