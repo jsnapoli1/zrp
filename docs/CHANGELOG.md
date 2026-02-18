@@ -2,6 +2,16 @@
 
 All notable changes to ZRP are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] - 2026-02-18
+
+### Fixed
+- Calendar page now fetches from real API instead of showing template error
+- Devices page uses inline modal dialog instead of navigating to separate page
+- Docker healthcheck uses `/healthz` endpoint (bypasses auth)
+- Healthcheck command syntax corrected in Portainer stack
+- Portainer stack updated to build from Dockerfile via git repo
+- Hover states for sidebar, buttons, and table rows
+
 ## [0.3.0] - 2026-02-18
 
 ### Added
