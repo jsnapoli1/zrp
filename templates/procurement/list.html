@@ -1,0 +1,41 @@
+{{define "content"}}
+<div class="mb-4 flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
+  <h2 class="text-lg font-semibold">Purchase Orders</h2>
+  <button class="btn btn-primary">+ New PO</button>
+</div>
+
+<div class="card overflow-x-auto">
+  <div id="pos-table">
+    {{template "pos-table" .}}
+  </div>
+</div>
+{{end}}
+
+{{define "pos-table"}}
+{{if eq (len .POs) 0}}
+<div class="text-center py-12">
+  <p class="text-gray-500 font-medium">No purchase orders yet</p>
+</div>
+{{else}}
+<table class="w-full text-sm">
+  <thead>
+    <tr class="border-b border-gray-200 dark:border-gray-700 text-left">
+      <th class="px-3 py-2 font-medium text-gray-500">PO #</th>
+      <th class="px-3 py-2 font-medium text-gray-500">Vendor</th>
+      <th class="px-3 py-2 font-medium text-gray-500">Status</th>
+      <th class="px-3 py-2 font-medium text-gray-500">Created</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .POs}}
+    <tr class="table-row border-b border-gray-100 dark:border-gray-700" style="cursor: pointer">
+      <td class="px-3 py-2 font-mono text-blue-600">{{.ID}}</td>
+      <td class="px-3 py-2">{{.VendorID}}</td>
+      <td class="px-3 py-2">{{badge .Status}}</td>
+      <td class="px-3 py-2">{{formatDate .CreatedAt}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

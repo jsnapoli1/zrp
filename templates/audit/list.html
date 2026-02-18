@@ -1,0 +1,106 @@
+{{define "content"}}
+<div class="card">
+  <h2 class="text-lg font-semibold mb-4">Audit Log</h2>
+  
+  <!-- Filters -->
+  <form class="flex gap-3 mb-4 flex-wrap items-end" 
+        hx-get="/audit" hx-target="#audit-table" hx-swap="innerHTML" hx-trigger="submit">
+    <div>
+      <label class="label">Module</label>
+      <select name="module" class="input w-40">
+        <option value="">All</option>
+        <option value="device" {{if eq .Module "device"}}selected{{end}}>device</option>
+        <option value="firmware" {{if eq .Module "firmware"}}selected{{end}}>firmware</option>
+        <option value="po" {{if eq .Module "po"}}selected{{end}}>po</option>
+        <option value="eco" {{if eq .Module "eco"}}selected{{end}}>eco</option>
+        <option value="inventory" {{if eq .Module "inventory"}}selected{{end}}>inventory</option>
+        <option value="ncr" {{if eq .Module "ncr"}}selected{{end}}>ncr</option>
+        <option value="rma" {{if eq .Module "rma"}}selected{{end}}>rma</option>
+        <option value="quote" {{if eq .Module "quote"}}selected{{end}}>quote</option>
+        <option value="workorder" {{if eq .Module "workorder"}}selected{{end}}>workorder</option>
+        <option value="doc" {{if eq .Module "doc"}}selected{{end}}>doc</option>
+      </select>
+    </div>
+    
+    <div>
+      <label class="label">User</label>
+      <input type="text" name="user" class="input w-40" value="{{.FilterUser}}" placeholder="Username">
+    </div>
+    
+    <div>
+      <label class="label">From</label>
+      <input type="date" name="from" class="input w-40" value="{{.FilterFrom}}">
+    </div>
+    
+    <div>
+      <label class="label">To</label>
+      <input type="date" name="to" class="input w-40" value="{{.FilterTo}}">
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Apply</button>
+    <button type="button" class="btn btn-secondary" onclick="this.form.reset(); htmx.trigger(this.form, 'submit');">Clear</button>
+  </form>
+
+  <div id="audit-table">
+    {{template "audit-table" .}}
+  </div>
+</div>
+{{end}}
+
+{{define "audit-table"}}
+{{if .Activities}}
+<div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b text-left text-gray-500">
+        <th class="pb-2">Timestamp</th>
+        <th class="pb-2">User</th>
+        <th class="pb-2">Module</th>
+        <th class="pb-2">Action</th>
+        <th class="pb-2">Record ID</th>
+        <th class="pb-2">Summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Activities}}
+      <tr class="border-b border-gray-100">
+        <td class="py-2 text-gray-500 text-xs whitespace-nowrap">{{if .CreatedAt}}{{slice .CreatedAt 0 19}}{{end}}</td>
+        <td class="py-2 font-medium">{{.Username}}</td>
+        <td class="py-2">
+          {{if eq .Module "device"}}
+            <span class="badge bg-blue-100 text-blue-800">device</span>
+          {{else if eq .Module "firmware"}}
+            <span class="badge bg-purple-100 text-purple-800">firmware</span>
+          {{else if eq .Module "po"}}
+            <span class="badge bg-green-100 text-green-800">po</span>
+          {{else if eq .Module "eco"}}
+            <span class="badge bg-yellow-100 text-yellow-800">eco</span>
+          {{else if eq .Module "inventory"}}
+            <span class="badge bg-teal-100 text-teal-800">inventory</span>
+          {{else if eq .Module "ncr"}}
+            <span class="badge bg-red-100 text-red-800">ncr</span>
+          {{else if eq .Module "rma"}}
+            <span class="badge bg-orange-100 text-orange-800">rma</span>
+          {{else if eq .Module "quote"}}
+            <span class="badge bg-pink-100 text-pink-800">quote</span>
+          {{else if eq .Module "workorder"}}
+            <span class="badge bg-indigo-100 text-indigo-800">workorder</span>
+          {{else if eq .Module "doc"}}
+            <span class="badge bg-gray-100 text-gray-800">doc</span>
+          {{else}}
+            <span class="badge bg-gray-100 text-gray-700">{{.Module}}</span>
+          {{end}}
+        </td>
+        <td class="py-2">{{.Action}}</td>
+        <td class="py-2 font-mono text-blue-600">{{.RecordID}}</td>
+        <td class="py-2 text-gray-600 truncate max-w-[300px]">{{if .Summary}}{{.Summary}}{{else}}&mdash;{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+<div class="text-sm text-gray-400 mt-2">{{len .Activities}} entries</div>
+{{else}}
+{{template "empty-state" (dict "Message" "No audit entries" "ActionURL" "" "ActionLabel" "")}}
+{{end}}
+{{end}}

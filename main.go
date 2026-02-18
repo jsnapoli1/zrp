@@ -157,6 +157,40 @@ func main() {
 		}
 	})
 
+	// Work Orders
+	mux.HandleFunc("/workorders", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			handleCreateWorkOrder(w, r)
+			return
+		}
+		handleListWorkOrders(w, r)
+	})
+	mux.HandleFunc("/workorders/new", handleWorkOrdersNewForm)
+	mux.HandleFunc("/workorders/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/workorders/")
+		parts := strings.Split(path, "/")
+		if len(parts) == 2 && parts[1] == "bom" && r.Method == "GET" {
+			handleWorkOrderBOM(w, r, parts[0])
+			return
+		}
+		if len(parts) == 2 && parts[1] == "pdf" && r.Method == "GET" {
+			handleWorkOrderPDF(w, r, parts[0])
+			return
+		}
+		if len(parts) >= 1 && parts[0] != "" {
+			switch r.Method {
+			case "GET":
+				handleGetWorkOrder(w, r, parts[0])
+			case "PUT":
+				handleUpdateWorkOrder(w, r, parts[0])
+			default:
+				http.Error(w, "Method not allowed", 405)
+			}
+			return
+		}
+		handleListWorkOrders(w, r)
+	})
+
 	// SPA fallback
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -198,6 +232,24 @@ func main() {
 	mux.HandleFunc("/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		handleMe(w, r)
 	})
+
+	// React frontend - serve static files if frontend/dist exists
+	if _, err := os.Stat("frontend/dist"); err == nil {
+		// Serve static assets (JS, CSS, etc.)
+		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("frontend/dist/assets"))))
+		
+		// Serve React app for all non-API routes
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Skip API routes and existing static routes
+			if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/auth/") {
+				http.NotFound(w, r)
+				return
+			}
+			
+			// For the React app, serve index.html for all routes (client-side routing)
+			http.ServeFile(w, r, "frontend/dist/index.html")
+		})
+	}
 
 	// API routes - using a simple router
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
