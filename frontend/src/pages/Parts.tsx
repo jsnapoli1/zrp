@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Textarea } from "../components/ui/textarea";
 import { 
   Select, 
   SelectContent, 
@@ -11,6 +13,15 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "../components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -21,12 +32,12 @@ import {
 } from "../components/ui/table";
 import { Skeleton } from "../components/ui/skeleton";
 import { 
-  Package, 
   Search, 
   Filter,
   ChevronLeft,
   ChevronRight,
-  RotateCcw
+  RotateCcw,
+  Plus
 } from "lucide-react";
 import { api, type Part, type Category, type ApiResponse } from "../lib/api";
 
@@ -38,6 +49,19 @@ interface PartWithFields extends Part {
   status?: string;
 }
 
+interface CreatePartData {
+  ipn: string;
+  description: string;
+  category: string;
+  cost: string;
+  price: string;
+  minimum_stock: string;
+  current_stock: string;
+  location: string;
+  vendor: string;
+  status: string;
+}
+
 function Parts() {
   const navigate = useNavigate();
   const [parts, setParts] = useState<Part[]>([]);
@@ -47,7 +71,22 @@ function Parts() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalParts, setTotalParts] = useState(0);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const pageSize = 50;
+
+  const [partForm, setPartForm] = useState<CreatePartData>({
+    ipn: "",
+    description: "",
+    category: "",
+    cost: "",
+    price: "",
+    minimum_stock: "",
+    current_stock: "",
+    location: "",
+    vendor: "",
+    status: "active"
+  });
 
   // Debounced search effect
   useEffect(() => {
@@ -119,6 +158,52 @@ function Parts() {
     setCurrentPage(1);
   };
 
+  const handleCreatePart = async () => {
+    setCreating(true);
+    try {
+      const partData = {
+        ipn: partForm.ipn,
+        description: partForm.description,
+        cost: partForm.cost ? parseFloat(partForm.cost) : undefined,
+        price: partForm.price ? parseFloat(partForm.price) : undefined,
+        minimum_stock: partForm.minimum_stock ? parseInt(partForm.minimum_stock) : undefined,
+        current_stock: partForm.current_stock ? parseInt(partForm.current_stock) : undefined,
+        location: partForm.location || undefined,
+        vendor: partForm.vendor || undefined,
+        status: partForm.status,
+        fields: {
+          category: partForm.category,
+          description: partForm.description,
+          cost: partForm.cost,
+          stock: partForm.current_stock,
+          status: partForm.status
+        }
+      };
+      
+      await api.createPart(partData);
+      setCreateDialogOpen(false);
+      setPartForm({
+        ipn: "",
+        description: "",
+        category: "",
+        cost: "",
+        price: "",
+        minimum_stock: "",
+        current_stock: "",
+        location: "",
+        vendor: "",
+        status: "active"
+      });
+      
+      // Refresh the parts list
+      fetchParts();
+    } catch (error) {
+      console.error('Failed to create part:', error);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   // Calculate pagination
   const totalPages = Math.ceil(totalParts / pageSize);
   const hasNextPage = currentPage < totalPages;
@@ -148,10 +233,146 @@ function Parts() {
             Manage your parts inventory and specifications
           </p>
         </div>
-        <Button variant="outline">
-          <Package className="h-4 w-4 mr-2" />
-          Add Part
-        </Button>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Part
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Add New Part</DialogTitle>
+              <DialogDescription>
+                Create a new part in your inventory system.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ipn">IPN *</Label>
+                <Input
+                  id="ipn"
+                  placeholder="Internal Part Number"
+                  value={partForm.ipn}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, ipn: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select
+                  value={partForm.category}
+                  onValueChange={(value) => setPartForm(prev => ({ ...prev, category: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Part description..."
+                  value={partForm.description}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, description: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="cost">Cost ($)</Label>
+                <Input
+                  id="cost"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={partForm.cost}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, cost: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="price">Price ($)</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={partForm.price}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, price: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="minimum_stock">Minimum Stock</Label>
+                <Input
+                  id="minimum_stock"
+                  type="number"
+                  placeholder="0"
+                  value={partForm.minimum_stock}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, minimum_stock: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="current_stock">Current Stock</Label>
+                <Input
+                  id="current_stock"
+                  type="number"
+                  placeholder="0"
+                  value={partForm.current_stock}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, current_stock: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="location">Location</Label>
+                <Input
+                  id="location"
+                  placeholder="Storage location"
+                  value={partForm.location}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, location: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="vendor">Vendor</Label>
+                <Input
+                  id="vendor"
+                  placeholder="Primary vendor"
+                  value={partForm.vendor}
+                  onChange={(e) => setPartForm(prev => ({ ...prev, vendor: e.target.value }))}
+                />
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setCreateDialogOpen(false)}
+                disabled={creating}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleCreatePart}
+                disabled={creating || !partForm.ipn}
+              >
+                {creating ? 'Creating...' : 'Create Part'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Filters Card */}
