@@ -47,7 +47,7 @@ window.module_quotes = {
           </tr>`).join('')}
           ${lines.length?`<tr class="font-bold"><td colspan="4" class="py-2 text-right">Total:</td><td class="py-2 text-right">$${lines.reduce((s,l)=>s+l.qty*(l.unit_price||0),0).toFixed(2)}</td></tr>`:''}
         </tbody></table>
-        <button class="btn btn-secondary mt-3" id="quote-cost">💰 View Cost Rollup</button>
+        <div class="flex gap-2 mt-3"><button class="btn btn-secondary" id="quote-cost">💰 View Cost Rollup</button><button class="btn btn-secondary" onclick="window.open('/api/v1/quotes/${id}/pdf','_blank')">🖨️ Print Quote</button></div>
       `);
       document.getElementById('quote-cost')?.addEventListener('click', async () => {
         const c = (await api('GET','quotes/'+id+'/cost')).data;

@@ -188,6 +188,8 @@ func main() {
 			handleGetWorkOrder(w, r, parts[1])
 		case parts[0] == "workorders" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdateWorkOrder(w, r, parts[1])
+		case parts[0] == "workorders" && len(parts) == 3 && parts[2] == "pdf" && r.Method == "GET":
+			handleWorkOrderPDF(w, r, parts[1])
 		case parts[0] == "workorders" && len(parts) == 3 && parts[2] == "bom" && r.Method == "GET":
 			handleWorkOrderBOM(w, r, parts[1])
 
@@ -264,6 +266,8 @@ func main() {
 			handleGetQuote(w, r, parts[1])
 		case parts[0] == "quotes" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdateQuote(w, r, parts[1])
+		case parts[0] == "quotes" && len(parts) == 3 && parts[2] == "pdf" && r.Method == "GET":
+			handleQuotePDF(w, r, parts[1])
 		case parts[0] == "quotes" && len(parts) == 3 && parts[2] == "cost" && r.Method == "GET":
 			handleQuoteCost(w, r, parts[1])
 

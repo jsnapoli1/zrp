@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-gray-100">
+<!-- Dark mode restored from localStorage before paint -->
+<script>if(localStorage.getItem('zrp-dark-mode')==='true')document.documentElement.classList.add('dark')</script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZRP — Zonit Resource Planning</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config = { darkMode: 'class' }</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
   .sidebar-link { @apply flex items-center gap-3 px-4 py-2 text-sm text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition-colors cursor-pointer; }
@@ -53,7 +56,7 @@
   .badge-testing { @apply bg-yellow-100 text-yellow-700; }
   .badge-passed { @apply bg-green-100 text-green-800; }
   .modal-overlay { @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50; }
-  .modal-content { @apply bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto; }
+  .modal-content { @apply bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto; }
   @media (max-width: 767px) {
     .modal-content { max-width: 100% !important; margin: 0.5rem; }
     #sidebar { position: fixed; left: -100%; top: 0; bottom: 0; z-index: 40; transition: left 0.3s; }
@@ -66,18 +69,41 @@
   .btn-secondary { @apply bg-gray-200 text-gray-700 hover:bg-gray-300; }
   .btn-danger { @apply bg-red-600 text-white hover:bg-red-700; }
   .btn-success { @apply bg-green-600 text-white hover:bg-green-700; }
-  .input { @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none; }
-  .label { @apply block text-sm font-medium text-gray-700 mb-1; }
-  .card { @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6; }
-  .table-row { @apply hover:bg-gray-50 cursor-pointer transition-colors; }
+  .input { @apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none; }
+  .label { @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1; }
+  .card { @apply bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 rounded-xl shadow-sm border border-gray-200 p-6; }
+  .table-row { @apply hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors; }
   .toast { @apply fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium transition-all; }
+
+  /* Dark mode overrides for dynamic content */
+  .dark .text-gray-500 { color: #9ca3af !important; }
+  .dark .text-gray-400 { color: #9ca3af !important; }
+  .dark .text-gray-600 { color: #d1d5db !important; }
+  .dark .text-gray-700 { color: #e5e7eb !important; }
+  .dark .text-gray-800 { color: #f3f4f6 !important; }
+  .dark .border-gray-100 { border-color: #374151 !important; }
+  .dark .border-gray-200 { border-color: #374151 !important; }
+  .dark .bg-gray-50 { background-color: #111827 !important; }
+  .dark .bg-gray-100 { background-color: #1f2937 !important; }
+  .dark .bg-white { background-color: #1f2937 !important; }
+  .dark .bg-green-50 { background-color: #064e3b !important; }
+  .dark .bg-yellow-50 { background-color: #78350f !important; }
+  .dark .bg-red-50 { background-color: #7f1d1d !important; }
+  .dark .bg-blue-50 { background-color: #1e3a5f !important; }
+  .dark .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+  .dark .shadow-lg { box-shadow: 0 4px 6px rgba(0,0,0,0.4) !important; }
+  .dark .shadow-xl { box-shadow: 0 8px 16px rgba(0,0,0,0.5) !important; }
+  .dark #search-dropdown, .dark #notif-dropdown { background-color: #1f2937 !important; border-color: #374151 !important; }
+  .dark #search-dropdown .bg-gray-50, .dark #notif-dropdown .hover\:bg-gray-50:hover { background-color: #374151 !important; }
+  .dark .hover\:bg-gray-50:hover { background-color: #374151 !important; }
+  .dark .hover\:bg-blue-50:hover { background-color: #1e3a5f !important; }
 </style>
 </head>
-<body class="h-full">
+<body class="h-full dark:bg-gray-900 dark:text-gray-100">
 
 <!-- Login Page -->
-<div id="login-page" class="hidden min-h-full flex items-center justify-center bg-gray-100">
-  <div class="bg-white rounded-xl shadow-lg p-8 w-full max-w-sm">
+<div id="login-page" class="hidden min-h-full flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+  <div class="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-lg p-8 w-full max-w-sm">
     <div class="flex items-center justify-center gap-3 mb-6">
       <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">Z</div>
       <span class="text-2xl font-bold text-gray-800">ZRP</span>
@@ -135,7 +161,7 @@
   <!-- Main -->
   <div class="flex-1 flex flex-col overflow-hidden">
     <!-- Top bar -->
-    <header class="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between">
+    <header class="bg-white dark:bg-gray-900 dark:border-gray-700 shadow-sm border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <button id="hamburger" class="md:hidden text-gray-600 p-1" onclick="toggleSidebar()">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -147,6 +173,11 @@
           <input id="global-search" type="text" placeholder="Search parts, ECOs, devices..." class="input w-72" autocomplete="off">
           <div id="search-dropdown" class="absolute right-0 z-50 w-96 bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-96 overflow-y-auto hidden"></div>
         </div>
+        <!-- Dark Mode Toggle -->
+        <button id="dark-toggle" class="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" onclick="toggleDarkMode()" title="Toggle dark mode">
+          <svg id="dark-icon-moon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          <svg id="dark-icon-sun" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </button>
         <!-- Notification Bell -->
         <div class="relative">
           <button id="notif-bell" class="relative p-1 text-gray-500 hover:text-gray-700" onclick="toggleNotifications()">
@@ -160,7 +191,7 @@
       </div>
     </header>
     <!-- Content -->
-    <main id="content" class="flex-1 overflow-y-auto p-3 md:p-6 bg-gray-50"></main>
+    <main id="content" class="flex-1 overflow-y-auto p-3 md:p-6 bg-gray-50 dark:bg-gray-900"></main>
     <footer class="bg-gray-50 border-t px-4 py-1 text-xs text-gray-400 text-right hidden md:block">Press <kbd class="bg-gray-200 px-1 rounded">?</kbd> for keyboard shortcuts</footer>
   </div>
 </div>
@@ -477,6 +508,19 @@ document.addEventListener('click', (e) => {
     dd.classList.add('hidden');
   }
 });
+
+// Dark Mode
+function toggleDarkMode() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('zrp-dark-mode', isDark);
+  updateDarkIcon();
+}
+function updateDarkIcon() {
+  const isDark = document.documentElement.classList.contains('dark');
+  document.getElementById('dark-icon-moon').classList.toggle('hidden', isDark);
+  document.getElementById('dark-icon-sun').classList.toggle('hidden', !isDark);
+}
+document.addEventListener('DOMContentLoaded', updateDarkIcon);
 
 // Keyboard Shortcuts
 let gPending = false;

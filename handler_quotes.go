@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -93,4 +94,107 @@ func handleQuoteCost(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	if lines == nil { lines = []CostLine{} }
 	jsonResp(w, map[string]interface{}{"lines": lines, "total": total})
+}
+
+func handleQuotePDF(w http.ResponseWriter, r *http.Request, id string) {
+	var q Quote
+	var aa sql.NullString
+	err := db.QueryRow("SELECT id,customer,status,COALESCE(notes,''),created_at,COALESCE(valid_until,''),accepted_at FROM quotes WHERE id=?", id).
+		Scan(&q.ID, &q.Customer, &q.Status, &q.Notes, &q.CreatedAt, &q.ValidUntil, &aa)
+	if err != nil {
+		http.Error(w, "Quote not found", 404)
+		return
+	}
+
+	rows, _ := db.Query("SELECT id,quote_id,ipn,COALESCE(description,''),qty,COALESCE(unit_price,0),COALESCE(notes,'') FROM quote_lines WHERE quote_id=?", id)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var l QuoteLine
+			rows.Scan(&l.ID, &l.QuoteID, &l.IPN, &l.Description, &l.Qty, &l.UnitPrice, &l.Notes)
+			q.Lines = append(q.Lines, l)
+		}
+	}
+
+	lineRows := ""
+	total := 0.0
+	for _, l := range q.Lines {
+		lineTotal := float64(l.Qty) * l.UnitPrice
+		total += lineTotal
+		lineRows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td style="text-align:center">%d</td><td style="text-align:right">$%.2f</td><td style="text-align:right">$%.2f</td></tr>`,
+			l.IPN, l.Description, l.Qty, l.UnitPrice, lineTotal)
+	}
+	if lineRows == "" {
+		lineRows = `<tr><td colspan="5" style="text-align:center;color:#999">No line items</td></tr>`
+	}
+
+	date := q.CreatedAt
+	if len(date) > 10 {
+		date = date[:10]
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Quote — %s</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; padding: 0.5in; }
+  h1 { font-size: 18pt; margin-bottom: 2pt; }
+  h2 { font-size: 13pt; margin: 16pt 0 6pt; border-bottom: 2px solid #000; padding-bottom: 3pt; }
+  table { width: 100%%; border-collapse: collapse; margin-bottom: 12pt; }
+  th, td { border: 1px solid #000; padding: 4pt 6pt; text-align: left; font-size: 10pt; }
+  th { background: #eee; font-weight: bold; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #000; padding-bottom: 8pt; margin-bottom: 12pt; }
+  .info-grid { display: grid; grid-template-columns: auto 1fr; gap: 4pt 12pt; margin-bottom: 12pt; font-size: 10pt; }
+  .info-grid dt { font-weight: bold; }
+  .total-row td { font-weight: bold; font-size: 11pt; }
+  .footer { margin-top: 24pt; font-size: 9pt; color: #555; border-top: 1px solid #999; padding-top: 8pt; }
+  @media print { body { padding: 0; } @page { margin: 0.5in; } }
+</style>
+</head><body>
+<div class="header">
+  <div>
+    <h1>ZRP — Quote</h1>
+    <div style="font-size:10pt;color:#555">Zonit Resource Planning</div>
+  </div>
+  <div style="text-align:right;font-size:10pt">
+    <div><strong>Quote:</strong> %s</div>
+    <div><strong>Date:</strong> %s</div>
+    <div><strong>Valid Until:</strong> %s</div>
+    <div><strong>Status:</strong> %s</div>
+  </div>
+</div>
+
+<h2>Customer</h2>
+<div class="info-grid">
+  <dt>Customer:</dt><dd>%s</dd>
+</div>
+
+<h2>Line Items</h2>
+<table>
+  <thead><tr><th>IPN</th><th>Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
+  <tbody>%s
+    <tr class="total-row"><td colspan="4" style="text-align:right;border-top:2px solid #000">Subtotal:</td><td style="text-align:right;border-top:2px solid #000">$%.2f</td></tr>
+  </tbody>
+</table>
+
+%s
+
+<div class="footer">
+  <p><strong>Terms:</strong> Net 30. Prices valid through the date shown above.</p>
+  <p><strong>Contact:</strong> sales@zonit.com | Zonit Structured Solutions, LLC</p>
+</div>
+
+<script>window.onload = () => window.print()</script>
+</body></html>`,
+		q.ID, q.ID, date, q.ValidUntil, q.Status,
+		q.Customer, lineRows, total,
+		func() string {
+			if q.Notes != "" {
+				return fmt.Sprintf(`<h2>Notes</h2><p style="font-size:10pt">%s</p>`, q.Notes)
+			}
+			return ""
+		}())
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
 }

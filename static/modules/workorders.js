@@ -39,7 +39,7 @@ window.module_workorders = {
     });
     window._woEdit = async (id) => {
       const w = (await api('GET','workorders/'+id)).data;
-      showModal('WO: '+id, form(w)+`<button class="btn btn-secondary mt-3" id="wo-bom">📋 View BOM</button>`, async (o) => {
+      showModal('WO: '+id, form(w)+`<div class="flex gap-2 mt-3"><button class="btn btn-secondary" id="wo-bom">📋 View BOM</button><button class="btn btn-secondary" onclick="window.open('/api/v1/workorders/${id}/pdf','_blank')">🖨️ Print Traveler</button></div>`, async (o) => {
         const v = getModalValues(o); v.qty = parseInt(v.qty)||1;
         try { await api('PUT','workorders/'+id,v); toast('Updated'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
       });

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -107,4 +108,146 @@ func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	if bom == nil { bom = []BOMLine{} }
 	jsonResp(w, map[string]interface{}{"wo_id": id, "assembly_ipn": assemblyIPN, "qty": qty, "bom": bom})
+}
+
+func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
+	var wo WorkOrder
+	var sa, ca sql.NullString
+	err := db.QueryRow("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
+		Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
+	if err != nil {
+		http.Error(w, "Work order not found", 404)
+		return
+	}
+	wo.StartedAt = sp(sa)
+	wo.CompletedAt = sp(ca)
+
+	// Get BOM data
+	type BOMLine struct {
+		IPN          string
+		Description  string
+		MPN          string
+		Manufacturer string
+		QtyRequired  float64
+		QtyOnHand    float64
+		RefDes       string
+	}
+	rows, _ := db.Query("SELECT ipn, qty_on_hand FROM inventory")
+	var bom []BOMLine
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var bl BOMLine
+			rows.Scan(&bl.IPN, &bl.QtyOnHand)
+			bl.QtyRequired = float64(wo.Qty)
+			fields, ferr := getPartByIPN(partsDir, bl.IPN)
+			if ferr == nil {
+				for k, v := range fields {
+					kl := strings.ToLower(k)
+					if kl == "description" || kl == "desc" {
+						bl.Description = v
+					} else if kl == "mpn" {
+						bl.MPN = v
+					} else if kl == "manufacturer" || kl == "mfr" {
+						bl.Manufacturer = v
+					} else if kl == "reference" || kl == "refdes" || kl == "ref_des" {
+						bl.RefDes = v
+					}
+				}
+			}
+			bom = append(bom, bl)
+		}
+	}
+
+	// Get assembly description
+	assemblyDesc := ""
+	if fields, ferr := getPartByIPN(partsDir, wo.AssemblyIPN); ferr == nil {
+		for k, v := range fields {
+			if strings.EqualFold(k, "description") || strings.EqualFold(k, "desc") {
+				assemblyDesc = v
+				break
+			}
+		}
+	}
+
+	// Build BOM rows HTML
+	bomRows := ""
+	for _, bl := range bom {
+		bomRows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td style="text-align:center">%.0f</td><td>%s</td></tr>`,
+			bl.IPN, bl.Description, bl.MPN, bl.Manufacturer, bl.QtyRequired, bl.RefDes)
+	}
+	if bomRows == "" {
+		bomRows = `<tr><td colspan="6" style="text-align:center;color:#999">No BOM data</td></tr>`
+	}
+
+	date := wo.CreatedAt
+	if len(date) > 10 {
+		date = date[:10]
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Work Order Traveler — %s</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; padding: 0.5in; }
+  h1 { font-size: 18pt; margin-bottom: 2pt; }
+  h2 { font-size: 13pt; margin: 16pt 0 6pt; border-bottom: 2px solid #000; padding-bottom: 3pt; }
+  table { width: 100%%; border-collapse: collapse; margin-bottom: 12pt; }
+  th, td { border: 1px solid #000; padding: 4pt 6pt; text-align: left; font-size: 10pt; }
+  th { background: #eee; font-weight: bold; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #000; padding-bottom: 8pt; margin-bottom: 12pt; }
+  .header-left { }
+  .header-right { text-align: right; font-size: 10pt; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4pt 20pt; margin-bottom: 12pt; font-size: 10pt; }
+  .info-grid dt { font-weight: bold; }
+  .signoff td { height: 40pt; vertical-align: bottom; }
+  .signoff td.label-cell { width: 120pt; font-weight: bold; }
+  @media print { body { padding: 0; } @page { margin: 0.5in; } }
+</style>
+</head><body>
+<div class="header">
+  <div class="header-left">
+    <h1>ZRP — Work Order Traveler</h1>
+    <div style="font-size:10pt;color:#555">Zonit Resource Planning</div>
+  </div>
+  <div class="header-right">
+    <div><strong>WO:</strong> %s</div>
+    <div><strong>Date:</strong> %s</div>
+    <div><strong>Status:</strong> %s</div>
+    <div><strong>Priority:</strong> %s</div>
+  </div>
+</div>
+
+<h2>Assembly Information</h2>
+<div class="info-grid">
+  <dt>Assembly IPN:</dt><dd>%s</dd>
+  <dt>Description:</dt><dd>%s</dd>
+  <dt>Quantity:</dt><dd>%d</dd>
+  <dt>Notes:</dt><dd>%s</dd>
+</div>
+
+<h2>Bill of Materials</h2>
+<table>
+  <thead><tr><th>IPN</th><th>Description</th><th>MPN</th><th>Manufacturer</th><th>Qty Req</th><th>Ref Des</th></tr></thead>
+  <tbody>%s</tbody>
+</table>
+
+<h2>Sign-Off</h2>
+<table class="signoff">
+  <thead><tr><th style="width:120pt">Step</th><th>Name</th><th style="width:100pt">Date</th><th>Signature</th></tr></thead>
+  <tbody>
+    <tr><td class="label-cell">Kitted by</td><td></td><td></td><td></td></tr>
+    <tr><td class="label-cell">Built by</td><td></td><td></td><td></td></tr>
+    <tr><td class="label-cell">Tested by</td><td></td><td></td><td></td></tr>
+    <tr><td class="label-cell">QA Approved by</td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
+
+<script>window.onload = () => window.print()</script>
+</body></html>`,
+		wo.ID, wo.ID, date, wo.Status, wo.Priority,
+		wo.AssemblyIPN, assemblyDesc, wo.Qty, wo.Notes, bomRows)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
 }
