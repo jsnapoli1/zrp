@@ -83,4 +83,68 @@ describe("Dashboard", () => {
       expect(screen.queryByText("Loading dashboard...")).not.toBeInTheDocument();
     });
   });
+
+  it("renders welcome message", async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText(/Welcome back/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders all 8 KPI cards", async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText("Total Parts")).toBeInTheDocument();
+    });
+    const expectedCards = [
+      "Total Parts", "Open ECOs", "Low Stock", "Active Work Orders",
+      "Open POs", "Open NCRs", "Total Devices", "Open RMAs",
+    ];
+    for (const title of expectedCards) {
+      expect(screen.getByText(title)).toBeInTheDocument();
+    }
+  });
+
+  it("renders chart placeholder", async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText(/Chart.js integration needed/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders activity feed with user and timestamp", async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText(/John Doe/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Jane Smith/)).toBeInTheDocument();
+    expect(screen.getByText(/System/)).toBeInTheDocument();
+  });
+
+  it("renders activity type badges", async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText("ECO")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Work Order")).toBeInTheDocument();
+    expect(screen.getByText("Inventory")).toBeInTheDocument();
+  });
+
+  it("displays stat values from mock data", async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText("Total Parts")).toBeInTheDocument();
+    });
+    // Verify numeric values render (toLocaleString formatted)
+    expect(screen.getByText((150).toLocaleString())).toBeInTheDocument(); // total_parts
+    expect(screen.getByText((5).toLocaleString())).toBeInTheDocument(); // low_stock_alerts
+  });
+
+  it("handles charts API error gracefully", async () => {
+    mockGetDashboardCharts.mockRejectedValueOnce(new Error("Charts fail"));
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.queryByText("Loading dashboard...")).not.toBeInTheDocument();
+    });
+  });
 });

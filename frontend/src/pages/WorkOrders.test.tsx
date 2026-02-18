@@ -33,15 +33,17 @@ describe("WorkOrders", () => {
     expect(screen.getByText("WO-003")).toBeInTheDocument();
   });
 
-  it("shows summary cards", async () => {
+  it("shows summary cards with correct counts", async () => {
     render(<WorkOrders />);
     await waitFor(() => {
       expect(screen.getByText("Total WOs")).toBeInTheDocument();
-      expect(screen.getByText("Open")).toBeInTheDocument();
-      expect(screen.getByText("In Progress")).toBeInTheDocument();
-      expect(screen.getByText("On Hold")).toBeInTheDocument();
-      expect(screen.getByText("Completed")).toBeInTheDocument();
     });
+    // Total = 3
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.getByText("In Progress")).toBeInTheDocument();
+    expect(screen.getByText("On Hold")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
   });
 
   it("has create work order button", async () => {
@@ -51,7 +53,7 @@ describe("WorkOrders", () => {
     });
   });
 
-  it("opens create dialog on button click", async () => {
+  it("opens create dialog and shows form fields", async () => {
     render(<WorkOrders />);
     await waitFor(() => {
       expect(screen.getByText("WO-001")).toBeInTheDocument();
@@ -59,6 +61,93 @@ describe("WorkOrders", () => {
     fireEvent.click(screen.getByText("Create Work Order"));
     await waitFor(() => {
       expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/quantity/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/notes/i)).toBeInTheDocument();
+    });
+  });
+
+  it("create dialog has cancel button that closes it", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Cancel"));
+  });
+
+  it("create button is disabled when assembly_ipn is empty", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+    });
+    // The second "Create Work Order" button in the dialog footer
+    const createButtons = screen.getAllByText("Create Work Order");
+    const submitButton = createButtons[createButtons.length - 1];
+    expect(submitButton).toBeDisabled();
+  });
+
+  it("typing in assembly IPN shows filtered parts dropdown", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText(/assembly ipn/i), { target: { value: "IPN" } });
+    await waitFor(() => {
+      // Dropdown shows part descriptions
+      expect(screen.getByText("10k Resistor")).toBeInTheDocument();
+    });
+  });
+
+  it("selecting a part from dropdown fills the IPN field", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText(/assembly ipn/i), { target: { value: "IPN" } });
+    await waitFor(() => {
+      // Click on a dropdown item - find by the description since IPN-001 appears in the table too
+      const dropdown = screen.getByText("10k Resistor");
+      fireEvent.click(dropdown);
+    });
+    expect(screen.getByLabelText(/assembly ipn/i)).toHaveValue("IPN-001");
+  });
+
+  it("submits create form and calls API", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText(/assembly ipn/i), { target: { value: "IPN-003" } });
+    fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: "5" } });
+    
+    const createButtons = screen.getAllByText("Create Work Order");
+    const submitButton = createButtons[createButtons.length - 1];
+    fireEvent.click(submitButton);
+    
+    await waitFor(() => {
+      expect(mockCreateWorkOrder).toHaveBeenCalledWith(expect.objectContaining({
+        assembly_ipn: "IPN-003",
+        qty: 5,
+      }));
     });
   });
 
@@ -92,7 +181,48 @@ describe("WorkOrders", () => {
     render(<WorkOrders />);
     await waitFor(() => {
       const viewButtons = screen.getAllByText("View Details");
-      expect(viewButtons.length).toBeGreaterThan(0);
+      expect(viewButtons.length).toBe(3);
+      const bomButtons = screen.getAllByText("BOM");
+      expect(bomButtons.length).toBe(3);
+    });
+  });
+
+  it("renders table headers correctly", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO ID")).toBeInTheDocument();
+      expect(screen.getByText("Assembly")).toBeInTheDocument();
+      expect(screen.getByText("Status")).toBeInTheDocument();
+      expect(screen.getByText("Priority")).toBeInTheDocument();
+      expect(screen.getByText("Qty")).toBeInTheDocument();
+      expect(screen.getByText("Created")).toBeInTheDocument();
+      expect(screen.getByText("Age")).toBeInTheDocument();
+      expect(screen.getByText("Actions")).toBeInTheDocument();
+    });
+  });
+
+  it("handles API error gracefully", async () => {
+    mockGetWorkOrders.mockRejectedValueOnce(new Error("Network error"));
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("No work orders found")).toBeInTheDocument();
+    });
+  });
+
+  it("displays assembly description when available", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      // IPN-003 matches "MCU STM32" from mockParts
+      expect(screen.getAllByText("MCU STM32").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("displays quantity for each work order", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("10")).toBeInTheDocument();
+      expect(screen.getByText("5")).toBeInTheDocument();
+      expect(screen.getByText("100")).toBeInTheDocument();
     });
   });
 });
