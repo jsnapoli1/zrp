@@ -33,7 +33,8 @@ func requireAuth(next http.Handler) http.Handler {
 			strings.HasPrefix(path, "/auth/") ||
 			strings.HasPrefix(path, "/files/") ||
 			path == "/login" ||
-			path == "/api/v1/openapi.json" {
+			path == "/api/v1/openapi.json" ||
+			strings.HasPrefix(path, "/docs") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -55,7 +56,6 @@ func requireAuth(next http.Handler) http.Handler {
 		// Check session cookie
 		cookie, err := r.Cookie("zrp_session")
 		if err != nil {
-			// For page routes (non-API), redirect to login
 			if !strings.HasPrefix(path, "/api/") {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return

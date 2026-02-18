@@ -123,6 +123,33 @@ func main() {
 
 	mux.HandleFunc("/calendar", pageCalendar)
 
+	// Vendors
+	mux.HandleFunc("/vendors", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			handleCreateVendor(w, r)
+			return
+		}
+		handleListVendors(w, r)
+	})
+	mux.HandleFunc("/vendors/new", handleVendorsNewForm)
+	mux.HandleFunc("/vendors/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/vendors/")
+		if path == "" {
+			handleListVendors(w, r)
+			return
+		}
+		switch r.Method {
+		case "GET":
+			handleGetVendor(w, r, path)
+		case "PUT":
+			handleUpdateVendor(w, r, path)
+		case "DELETE":
+			handleDeleteVendor(w, r, path)
+		default:
+			http.Error(w, "Method not allowed", 405)
+		}
+	})
+
 	// SPA fallback
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
