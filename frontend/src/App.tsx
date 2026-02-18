@@ -62,6 +62,7 @@ function App() {
         <Routes>
           <Route path="/" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             
             {/* Engineering */}
             <Route path="/parts" element={<Parts />} />
