@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 func logAudit(db *sql.DB, username, action, module, recordID, summary string) {
@@ -48,11 +49,31 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	user := r.URL.Query().Get("user")
+	dateFrom := r.URL.Query().Get("from")
+	dateTo := r.URL.Query().Get("to")
+
 	query := "SELECT id, COALESCE(username,'system'), action, module, record_id, COALESCE(summary,''), created_at FROM audit_log"
 	var args []interface{}
+	var conditions []string
 	if module != "" {
-		query += " WHERE module = ?"
+		conditions = append(conditions, "module = ?")
 		args = append(args, module)
+	}
+	if user != "" {
+		conditions = append(conditions, "username = ?")
+		args = append(args, user)
+	}
+	if dateFrom != "" {
+		conditions = append(conditions, "created_at >= ?")
+		args = append(args, dateFrom)
+	}
+	if dateTo != "" {
+		conditions = append(conditions, "created_at <= ?")
+		args = append(args, dateTo+" 23:59:59")
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	query += " ORDER BY created_at DESC LIMIT ?"
 	args = append(args, limit)

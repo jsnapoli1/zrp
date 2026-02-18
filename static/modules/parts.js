@@ -64,6 +64,10 @@ window.module_parts = {
       const p = res.data;
       const fields = Object.entries(p.fields || {}).map(([k,v]) => `<div class="mb-2"><span class="label">${k}</span><div class="text-sm">${v}</div></div>`).join('');
       const isAssembly = ipn.toUpperCase().startsWith('PCA-') || ipn.toUpperCase().startsWith('ASY-');
+
+      // Cost section
+      let costHTML = '<div id="parts-cost-panel" class="mt-4 border-t pt-4"><p class="text-gray-400 text-sm">Loading cost...</p></div>';
+
       let bomHTML = '';
       if (isAssembly) {
         bomHTML = `<div class="mt-4 border-t pt-4">
@@ -75,7 +79,30 @@ window.module_parts = {
           <div id="parts-bom-panel" style="display:none"><p class="text-gray-400 text-center py-2">Loading BOM...</p></div>
         </div>`;
       }
-      showModal('Part: ' + ipn, `<div class="font-mono text-lg text-blue-600 mb-4">${ipn}</div>${isAssembly ? bomHTML : fields}`);
+      showModal('Part: ' + ipn, `<div class="font-mono text-lg text-blue-600 mb-4">${ipn}</div>${isAssembly ? bomHTML : fields}${costHTML}`);
+
+      // Load cost asynchronously
+      try {
+        const costRes = await api('GET', 'parts/' + encodeURIComponent(ipn) + '/cost');
+        const cost = costRes.data;
+        const panel = document.getElementById('parts-cost-panel');
+        if (panel) {
+          let html = '<h3 class="font-semibold text-sm mb-2">💰 Cost</h3>';
+          if (cost.last_unit_price !== undefined) {
+            html += `<div class="text-sm"><span class="text-gray-500">Last Unit Price:</span> <span class="font-semibold">$${Number(cost.last_unit_price).toFixed(4)}</span></div>`;
+            html += `<div class="text-sm text-gray-500">PO: ${cost.po_id||'—'} · ${cost.last_ordered||'—'}</div>`;
+          } else {
+            html += '<p class="text-sm text-gray-400">No purchase history</p>';
+          }
+          if (cost.bom_cost !== undefined) {
+            html += `<div class="text-sm mt-2"><span class="text-gray-500">BOM Cost Estimate:</span> <span class="font-semibold">$${Number(cost.bom_cost).toFixed(4)}</span></div>`;
+          }
+          panel.innerHTML = html;
+        }
+      } catch(e) {
+        const panel = document.getElementById('parts-cost-panel');
+        if (panel) panel.innerHTML = '<p class="text-sm text-gray-400">Cost data unavailable</p>';
+      }
     };
     window._partsLoadBOM = async (ipn) => {
       document.getElementById('parts-details-panel').style.display = 'none';

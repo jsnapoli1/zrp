@@ -2,7 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"encoding/csv"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -53,6 +57,85 @@ func handleUpdateDevice(w http.ResponseWriter, r *http.Request, serial string) {
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "device", serial, "Updated device "+serial)
 	handleGetDevice(w, r, serial)
+}
+
+func handleExportDevices(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT serial_number,ipn,COALESCE(firmware_version,''),COALESCE(customer,''),COALESCE(location,''),status,COALESCE(install_date,''),COALESCE(notes,'') FROM devices ORDER BY serial_number")
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=devices.csv")
+	cw := csv.NewWriter(w)
+	cw.Write([]string{"serial_number", "ipn", "firmware_version", "customer", "location", "status", "install_date", "notes"})
+	for rows.Next() {
+		var sn, ipn, fw, cust, loc, status, install, notes string
+		rows.Scan(&sn, &ipn, &fw, &cust, &loc, &status, &install, &notes)
+		cw.Write([]string{sn, ipn, fw, cust, loc, status, install, notes})
+	}
+	cw.Flush()
+}
+
+func handleImportDevices(w http.ResponseWriter, r *http.Request) {
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		jsonErr(w, "file required", 400)
+		return
+	}
+	defer file.Close()
+	cr := csv.NewReader(file)
+	headers, err := cr.Read()
+	if err != nil {
+		jsonErr(w, "invalid CSV", 400)
+		return
+	}
+	// Map header names to indices
+	idx := map[string]int{}
+	for i, h := range headers {
+		idx[strings.TrimSpace(strings.ToLower(h))] = i
+	}
+	colOf := func(row []string, name string) string {
+		if i, ok := idx[name]; ok && i < len(row) {
+			return strings.TrimSpace(row[i])
+		}
+		return ""
+	}
+
+	imported, skipped := 0, 0
+	var errors []string
+	now := time.Now().Format("2006-01-02 15:04:05")
+	for {
+		row, err := cr.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("row parse error: %v", err))
+			continue
+		}
+		sn := colOf(row, "serial_number")
+		ipn := colOf(row, "ipn")
+		if sn == "" || ipn == "" {
+			skipped++
+			continue
+		}
+		status := colOf(row, "status")
+		if status == "" {
+			status = "active"
+		}
+		_, err = db.Exec(`INSERT INTO devices (serial_number,ipn,firmware_version,customer,location,status,install_date,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(serial_number) DO UPDATE SET ipn=excluded.ipn,firmware_version=excluded.firmware_version,customer=excluded.customer,location=excluded.location,status=excluded.status,install_date=excluded.install_date,notes=excluded.notes`,
+			sn, ipn, colOf(row, "firmware_version"), colOf(row, "customer"), colOf(row, "location"), status, colOf(row, "install_date"), colOf(row, "notes"), now)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("row %s: %v", sn, err))
+		} else {
+			imported++
+		}
+	}
+	logAudit(db, getUsername(r), "imported", "device", "", fmt.Sprintf("Imported %d devices", imported))
+	jsonResp(w, map[string]interface{}{"imported": imported, "skipped": skipped, "errors": errors})
 }
 
 func handleDeviceHistory(w http.ResponseWriter, r *http.Request, serial string) {

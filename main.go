@@ -91,6 +91,8 @@ func main() {
 			handleGetPart(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "bom" && r.Method == "GET":
 			handlePartBOM(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "cost" && r.Method == "GET":
+			handlePartCost(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdatePart(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "DELETE":
@@ -197,6 +199,10 @@ func main() {
 			handleUpdateNCR(w, r, parts[1])
 
 		// Devices
+		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "export" && r.Method == "GET":
+			handleExportDevices(w, r)
+		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "import" && r.Method == "POST":
+			handleImportDevices(w, r)
 		case parts[0] == "devices" && len(parts) == 1 && r.Method == "GET":
 			handleListDevices(w, r)
 		case parts[0] == "devices" && len(parts) == 1 && r.Method == "POST":
@@ -221,6 +227,12 @@ func main() {
 			handleLaunchCampaign(w, r, parts[1])
 		case parts[0] == "campaigns" && len(parts) == 3 && parts[2] == "progress" && r.Method == "GET":
 			handleCampaignProgress(w, r, parts[1])
+		case parts[0] == "campaigns" && len(parts) == 3 && parts[2] == "stream" && r.Method == "GET":
+			handleCampaignStream(w, r, parts[1])
+		case parts[0] == "campaigns" && len(parts) == 3 && parts[2] == "devices" && r.Method == "GET":
+			handleCampaignDevices(w, r, parts[1])
+		case parts[0] == "campaigns" && len(parts) == 5 && parts[2] == "devices" && parts[4] == "mark" && r.Method == "POST":
+			handleMarkCampaignDevice(w, r, parts[1], parts[3])
 
 		// RMAs
 		case parts[0] == "rmas" && len(parts) == 1 && r.Method == "GET":

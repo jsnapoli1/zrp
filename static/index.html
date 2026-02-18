@@ -118,6 +118,8 @@
       <a class="sidebar-link" data-route="rma" onclick="navigate('rma')">🔧 RMAs</a>
       <div class="sidebar-group">Sales</div>
       <a class="sidebar-link" data-route="quotes" onclick="navigate('quotes')">💰 Quotes</a>
+      <div class="sidebar-group">Admin</div>
+      <a class="sidebar-link" data-route="audit" onclick="navigate('audit')">📋 Audit Log</a>
     </nav>
   </aside>
 
@@ -207,7 +209,7 @@ const moduleNames = {
   dashboard: 'Dashboard', parts: 'Parts (PLM)', ecos: 'ECOs', docs: 'Documents',
   inventory: 'Inventory', procurement: 'Purchase Orders', vendors: 'Vendors',
   workorders: 'Work Orders', testing: 'Test Records', ncr: 'NCRs',
-  devices: 'Devices', firmware: 'Firmware', rma: 'RMAs', quotes: 'Quotes'
+  devices: 'Devices', firmware: 'Firmware', rma: 'RMAs', quotes: 'Quotes', audit: 'Audit Log'
 };
 
 function navigate(route) {

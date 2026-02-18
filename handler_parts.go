@@ -380,6 +380,106 @@ func buildBOMTree(ipn string, depth, maxDepth int) (*BOMNode, error) {
 	return node, nil
 }
 
+func handlePartCost(w http.ResponseWriter, r *http.Request, ipn string) {
+	result := map[string]interface{}{"ipn": ipn}
+
+	// Last unit price from PO lines
+	var unitPrice float64
+	var poID, lastOrdered string
+	err := db.QueryRow(`SELECT pl.unit_price, pl.po_id, po.created_at FROM po_lines pl
+		JOIN purchase_orders po ON po.id = pl.po_id
+		WHERE pl.ipn=? AND pl.unit_price > 0 ORDER BY po.created_at DESC LIMIT 1`, ipn).Scan(&unitPrice, &poID, &lastOrdered)
+	if err == nil {
+		result["last_unit_price"] = unitPrice
+		result["po_id"] = poID
+		result["last_ordered"] = lastOrdered
+	}
+
+	// BOM cost for assemblies
+	upper := strings.ToUpper(ipn)
+	if strings.HasPrefix(upper, "PCA-") || strings.HasPrefix(upper, "ASY-") {
+		bomCost := calcBOMCost(ipn, 0, 5)
+		result["bom_cost"] = bomCost
+	}
+
+	jsonResp(w, result)
+}
+
+func calcBOMCost(ipn string, depth, maxDepth int) float64 {
+	if depth > maxDepth || partsDir == "" {
+		return 0
+	}
+	// Find BOM file
+	bomPaths := []string{filepath.Join(partsDir, ipn+".csv")}
+	entries, _ := os.ReadDir(partsDir)
+	for _, e := range entries {
+		if e.IsDir() {
+			bomPaths = append(bomPaths, filepath.Join(partsDir, e.Name(), ipn+".csv"))
+		}
+	}
+	var bomFile string
+	for _, p := range bomPaths {
+		if _, err := os.Stat(p); err == nil {
+			bomFile = p
+			break
+		}
+	}
+	if bomFile == "" {
+		return 0
+	}
+	f, err := os.Open(bomFile)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	rdr := csv.NewReader(f)
+	rdr.LazyQuotes = true
+	rdr.TrimLeadingSpace = true
+	records, err := rdr.ReadAll()
+	if err != nil || len(records) < 2 {
+		return 0
+	}
+	headers := records[0]
+	ipnIdx, qtyIdx := -1, -1
+	for i, h := range headers {
+		hl := strings.ToLower(h)
+		if hl == "ipn" || hl == "part_number" || hl == "pn" {
+			ipnIdx = i
+		}
+		if hl == "qty" || hl == "quantity" {
+			qtyIdx = i
+		}
+	}
+	if ipnIdx == -1 {
+		ipnIdx = 0
+	}
+	var total float64
+	for _, row := range records[1:] {
+		if ipnIdx >= len(row) {
+			continue
+		}
+		childIPN := strings.TrimSpace(row[ipnIdx])
+		if childIPN == "" {
+			continue
+		}
+		var qty float64 = 1
+		if qtyIdx >= 0 && qtyIdx < len(row) {
+			if q, e := strconv.ParseFloat(strings.TrimSpace(row[qtyIdx]), 64); e == nil {
+				qty = q
+			}
+		}
+		childUpper := strings.ToUpper(childIPN)
+		if strings.HasPrefix(childUpper, "PCA-") || strings.HasPrefix(childUpper, "ASY-") {
+			total += qty * calcBOMCost(childIPN, depth+1, maxDepth)
+		} else {
+			var price float64
+			db.QueryRow("SELECT pl.unit_price FROM po_lines pl JOIN purchase_orders po ON po.id=pl.po_id WHERE pl.ipn=? AND pl.unit_price>0 ORDER BY po.created_at DESC LIMIT 1", childIPN).Scan(&price)
+			total += qty * price
+		}
+	}
+	return total
+}
+
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	d := DashboardData{}
 	db.QueryRow("SELECT COUNT(*) FROM ecos WHERE status NOT IN ('implemented','rejected')").Scan(&d.OpenECOs)

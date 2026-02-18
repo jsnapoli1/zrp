@@ -6,7 +6,12 @@ window.module_devices = {
       container.innerHTML = `<div class="card">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-semibold">Device Registry</h2>
-          <button class="btn btn-primary" onclick="window._devCreate()">+ Register Device</button>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" onclick="window._devExportCSV()">📥 Export CSV</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('dev-import-file').click()">📤 Import CSV</button>
+            <input type="file" id="dev-import-file" accept=".csv" class="hidden" onchange="window._devImportCSV(this)">
+            <button class="btn btn-primary" onclick="window._devCreate()">+ Register Device</button>
+          </div>
         </div>
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
           <th class="pb-2">Serial</th><th class="pb-2">IPN</th><th class="pb-2">Customer</th><th class="pb-2">FW</th><th class="pb-2">Status</th><th class="pb-2">Location</th>
@@ -36,6 +41,24 @@ window.module_devices = {
       <div><label class="label">Install Date</label><input class="input" type="date" data-field="install_date" value="${d.install_date||''}"></div>
       <div><label class="label">Notes</label><textarea class="input" data-field="notes" rows="2">${d.notes||''}</textarea></div>
     </div>`;
+    window._devExportCSV = () => {
+      window.location.href = '/api/v1/devices/export';
+    };
+    window._devImportCSV = async (input) => {
+      const file = input.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/v1/devices/import', { method: 'POST', body: fd });
+        const json = await res.json();
+        const d = json.data || json;
+        const errCount = (d.errors||[]).length;
+        toast(`Imported ${d.imported||0} devices${d.skipped?' , '+d.skipped+' skipped':''}${errCount?', '+errCount+' errors':''}`);
+        load();
+      } catch(e) { toast(e.message, 'error'); }
+      input.value = '';
+    };
     window._devCreate = () => showModal('Register Device', form(), async (o) => {
       try { await api('POST','devices',getModalValues(o)); toast('Device registered'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
     });
