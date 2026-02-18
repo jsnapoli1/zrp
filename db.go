@@ -16,7 +16,7 @@ var db *sql.DB
 
 func initDB(path string) error {
 	var err error
-	db, err = sql.Open("sqlite", path+"?_journal_mode=WAL")
+	db, err = sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return err
 	}
@@ -257,7 +257,7 @@ func seedDB() {
 	var userCount int
 	db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'admin'").Scan(&userCount)
 	if userCount == 0 {
-		hash, err := bcrypt.GenerateFromPassword([]byte("zonit123"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("changeme"), bcrypt.DefaultCost)
 		if err != nil {
 			log.Printf("Failed to hash admin password: %v", err)
 		} else {
@@ -270,7 +270,7 @@ func seedDB() {
 	var engCount int
 	db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'engineer'").Scan(&engCount)
 	if engCount == 0 {
-		hash, err := bcrypt.GenerateFromPassword([]byte("zonit123"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("changeme"), bcrypt.DefaultCost)
 		if err == nil {
 			db.Exec("INSERT INTO users (username, password_hash, display_name, role, active) VALUES (?, ?, ?, ?, 1)",
 				"engineer", string(hash), "Engineer", "user")
@@ -280,7 +280,7 @@ func seedDB() {
 	var viewCount int
 	db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'viewer'").Scan(&viewCount)
 	if viewCount == 0 {
-		hash, err := bcrypt.GenerateFromPassword([]byte("zonit123"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("changeme"), bcrypt.DefaultCost)
 		if err == nil {
 			db.Exec("INSERT INTO users (username, password_hash, display_name, role, active) VALUES (?, ?, ?, ?, 1)",
 				"viewer", string(hash), "Viewer", "readonly")

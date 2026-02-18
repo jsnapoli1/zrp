@@ -21,7 +21,7 @@ Create `/etc/systemd/system/zrp.service`:
 
 ```ini
 [Unit]
-Description=ZRP - Zonit Resource Planning
+Description=ZRP - Resource Planning
 After=network.target
 
 [Service]
@@ -45,7 +45,7 @@ sudo systemctl status zrp
 
 ## launchd Service (macOS)
 
-Create `~/Library/LaunchAgents/com.zonit.zrp.plist`:
+Create `~/Library/LaunchAgents/com.zrp.server.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,7 +53,7 @@ Create `~/Library/LaunchAgents/com.zonit.zrp.plist`:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.zonit.zrp</string>
+    <string>com.zrp.server</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/zrp</string>
@@ -77,7 +77,7 @@ Create `~/Library/LaunchAgents/com.zonit.zrp.plist`:
 ```
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.zonit.zrp.plist
+launchctl load ~/Library/LaunchAgents/com.zrp.server.plist
 ```
 
 ## Reverse Proxy

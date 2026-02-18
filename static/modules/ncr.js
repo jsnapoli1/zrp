@@ -13,17 +13,24 @@ window.module_ncr = {
           <h2 class="text-lg font-semibold">Non-Conformance Reports</h2>
           <button class="btn btn-primary" onclick="window._ncrCreate()">+ New NCR</button>
         </div>
+        ${items.length===0?`<div class="text-center py-12">
+          <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <p class="text-gray-500 font-medium">No NCRs yet</p>
+          <p class="text-gray-400 text-sm mt-1">Create a non-conformance report when issues are found</p>
+          <button class="btn btn-primary mt-4" onclick="window._ncrCreate()">+ New NCR</button>
+        </div>`:`<div class="overflow-x-auto">
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
           <th class="pb-2 w-8">${bulk.headerCheckbox()}</th>
-          <th class="pb-2">ID</th><th class="pb-2">Title</th><th class="pb-2">Defect</th><th class="pb-2">Severity</th><th class="pb-2">Status</th>
+          <th class="pb-2">ID</th><th class="pb-2">Title</th><th class="pb-2">Defect</th><th class="pb-2">Severity</th><th class="pb-2">Status</th><th class="pb-2 w-8"></th>
         </tr></thead><tbody>
           ${items.map(n => `<tr class="table-row border-b border-gray-100" onclick="window._ncrEdit('${n.id}')">
             <td class="py-2">${bulk.checkbox(n.id)}</td>
             <td class="py-2 font-mono text-blue-600">${n.id}</td><td class="py-2">${n.title}</td>
             <td class="py-2">${n.defect_type||''}</td><td class="py-2">${badge(n.severity)}</td><td class="py-2">${badge(n.status)}</td>
+            <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
           </tr>`).join('')}
         </tbody></table>
-        ${items.length===0?'<p class="text-center text-gray-400 py-4">No NCRs</p>':''}
+        </div>`}
       </div>`;
       bulk.init();
     }
@@ -75,16 +82,23 @@ window.module_ncr = {
 
     window._ncrCreate = () => {
       const o = showModal('New NCR', form(), async (o) => {
-        try { await api('POST','ncrs',getModalValues(o)); toast('NCR created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
+        const v = getModalValues(o);
+        if (!v.title?.trim()) { toast('Title is required', 'error'); return; }
+        const btn = o.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('POST','ncrs',v); toast('NCR created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
       setupEcoCheckbox(o);
     };
     window._ncrEdit = async (id) => {
       const n = (await api('GET','ncrs/'+id)).data;
-      const o = showModal('NCR: '+id, form(n) + attachmentsSection('ncr', id), async (o) => {
+      const o = showModal('NCR: '+n.id+' — '+(n.title||'').substring(0,40), form(n) + attachmentsSection('ncr', id), async (o) => {
         const v = getModalValues(o);
+        if (!v.title?.trim()) { toast('Title is required', 'error'); return; }
         const createEco = o.querySelector('#ncr-create-eco')?.checked || false;
         v.create_eco = createEco;
+        const btn = o.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
         try {
           const res = await api('PUT','ncrs/'+id, v);
           const data = res.data;
@@ -94,7 +108,7 @@ window.module_ncr = {
             toast('NCR updated');
           }
           o.remove(); load();
-        } catch(e) { toast(e.message,'error'); }
+        } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
       initAttachments(o, 'ncr', id);
       setupEcoCheckbox(o);

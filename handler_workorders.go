@@ -209,7 +209,7 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 <div class="header">
   <div class="header-left">
     <h1>ZRP — Work Order Traveler</h1>
-    <div style="font-size:10pt;color:#555">Zonit Resource Planning</div>
+    <div style="font-size:10pt;color:#555">` + companyName + `</div>
   </div>
   <div class="header-right">
     <div><strong>WO:</strong> %s</div>

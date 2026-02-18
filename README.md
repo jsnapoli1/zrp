@@ -1,4 +1,4 @@
-# ZRP — Zonit Resource Planning
+# ZRP — Resource Planning
 
 A single-binary ERP system for hardware electronics manufacturing. Go backend, vanilla JS frontend, SQLite database. No dependencies to deploy — just run the binary.
 
@@ -19,7 +19,7 @@ A single-binary ERP system for hardware electronics manufacturing. Go backend, v
 │ ▸ Vendors    │  └──────┘└──────┘└──────┘     │
 │              │                                │
 │ MANUFACTURING│  Welcome to ZRP               │
-│ ▸ Work Orders│  Zonit Resource Planning —     │
+│ ▸ Work Orders│  Resource Planning —     │
 │ ▸ Testing    │  your complete ERP for         │
 │ ▸ NCRs       │  hardware manufacturing.       │
 │              │                                │
@@ -68,7 +68,7 @@ A single-binary ERP system for hardware electronics manufacturing. Go backend, v
 ## Quick Start
 
 ```bash
-git clone https://github.com/zonit/zrp.git
+git clone https://github.com/yourusername/zrp.git
 cd zrp
 go build -o zrp .
 ./zrp --pmDir /path/to/gitplm/parts/database
@@ -85,17 +85,17 @@ go build -o zrp .
 
 ```bash
 # From source
-git clone https://github.com/zonit/zrp.git
+git clone https://github.com/yourusername/zrp.git
 cd zrp
 go build -o zrp .
 
 # Or install directly
-go install github.com/zonit/zrp@latest
+go install github.com/yourusername/zrp@latest
 ```
 
 ## Configuration
 
-All configuration is via CLI flags:
+### CLI Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -103,9 +103,17 @@ All configuration is via CLI flags:
 | `-port` | `9000` | HTTP port to listen on |
 | `-db` | `zrp.db` | Path to SQLite database file |
 
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZRP_COMPANY_NAME` | `Your Company` | Company name shown on PDF quotes and work order travelers |
+| `ZRP_COMPANY_EMAIL` | `admin@example.com` | Contact email shown on PDF quotes |
+
 Example:
 ```bash
-./zrp -pmDir ~/Documents/Zonit/zonit-dev/parts/database -port 8080 -db /var/data/zrp.db
+ZRP_COMPANY_NAME="Acme Corp" ZRP_COMPANY_EMAIL="sales@acme.com" \
+  ./zrp -pmDir ./parts-database -port 8080 -db /var/data/zrp.db
 ```
 
 ## Running

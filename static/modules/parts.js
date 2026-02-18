@@ -28,7 +28,11 @@ window.module_parts = {
               <button class="btn btn-secondary" onclick="window._partsExport()">📥 CSV</button>
             </div>
           </div>
-          ${parts.length === 0 ? '<p class="text-gray-500 text-center py-8">No parts found. Configure --pmDir to load gitplm CSVs.</p>' : `
+          ${parts.length === 0 ? `<div class="text-center py-12">
+            <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+            <p class="text-gray-500 font-medium">No parts found</p>
+            <p class="text-gray-400 text-sm mt-1">Configure --pmDir to load gitplm CSVs</p>
+          </div>` : `
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead><tr class="border-b text-left text-gray-500">
@@ -314,6 +318,9 @@ window.module_parts = {
         </div>
       `, async (modal) => {
         const vals = getModalValues(modal);
+        if (!vals.unit_price || parseFloat(vals.unit_price) <= 0) { toast('Unit price is required', 'error'); return; }
+        const btn = modal.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
         try {
           await api('POST', 'prices', {
             ipn: vals.ipn,
@@ -325,7 +332,7 @@ window.module_parts = {
           toast('Price entry added');
           modal.remove();
           window._partsLoadPricing(ipn);
-        } catch(e) { toast(e.message, 'error'); }
+        } catch(e) { toast(e.message, 'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
     };
 

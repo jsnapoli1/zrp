@@ -11,15 +11,21 @@ window.module_firmware = {
           <h2 class="text-lg font-semibold">Firmware Campaigns</h2>
           <button class="btn btn-primary" onclick="window._fwCreate()">+ New Campaign</button>
         </div>
+        ${items.length===0?`<div class="text-center py-12">
+          <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/></svg>
+          <p class="text-gray-500 font-medium">No firmware campaigns</p>
+          <p class="text-gray-400 text-sm mt-1">Create a campaign to push firmware updates</p>
+          <button class="btn btn-primary mt-4" onclick="window._fwCreate()">+ New Campaign</button>
+        </div>`:`<div class="overflow-x-auto">
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
-          <th class="pb-2">ID</th><th class="pb-2">Name</th><th class="pb-2">Version</th><th class="pb-2">Category</th><th class="pb-2">Status</th>
+          <th class="pb-2">ID</th><th class="pb-2">Name</th><th class="pb-2">Version</th><th class="pb-2">Category</th><th class="pb-2">Status</th><th class="pb-2 w-8"></th>
         </tr></thead><tbody>
           ${items.map(f => `<tr class="table-row border-b border-gray-100" onclick="window._fwEdit('${f.id}')">
             <td class="py-2 font-mono text-blue-600">${f.id}</td><td class="py-2">${f.name}</td>
             <td class="py-2 font-mono">${f.version}</td><td class="py-2">${badge(f.category)}</td><td class="py-2">${badge(f.status)}</td>
+            <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
           </tr>`).join('')}
-        </tbody></table>
-        ${items.length===0?'<p class="text-center text-gray-400 py-4">No campaigns</p>':''}
+        </tbody></table></div>`}
       </div>`;
     }
     const form = (f={}) => `<div class="space-y-3">
@@ -36,7 +42,12 @@ window.module_firmware = {
       <div><label class="label">Notes</label><textarea class="input" data-field="notes" rows="2">${f.notes||''}</textarea></div>
     </div>`;
     window._fwCreate = () => showModal('New Campaign', form(), async (o) => {
-      try { await api('POST','campaigns',getModalValues(o)); toast('Campaign created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
+      const v = getModalValues(o);
+      if (!v.name?.trim()) { toast('Campaign name is required', 'error'); return; }
+      if (!v.version?.trim()) { toast('Version is required', 'error'); return; }
+      const btn = o.querySelector('#modal-save');
+      btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+      try { await api('POST','campaigns',v); toast('Campaign created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
     });
     window._fwEdit = async (id) => {
       const f = (await api('GET','campaigns/'+id)).data;
@@ -69,7 +80,10 @@ window.module_firmware = {
         ${f.status==='draft'?`<button class="btn btn-success mt-3" id="fw-launch">🚀 Launch Campaign</button>`:''}
         ${devicesHTML}
       `, async (o) => {
-        try { await api('PUT','campaigns/'+id,getModalValues(o)); toast('Updated'); o.remove(); if(activeSSE){activeSSE.close();activeSSE=null;} load(); } catch(e) { toast(e.message,'error'); }
+        const v = getModalValues(o);
+        const btn = o.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('PUT','campaigns/'+id,v); toast('Updated'); o.remove(); if(activeSSE){activeSSE.close();activeSSE=null;} load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
 
       // Start SSE for live progress

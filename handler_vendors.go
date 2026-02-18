@@ -31,9 +31,9 @@ func handleCreateVendor(w http.ResponseWriter, r *http.Request) {
 	var v Vendor
 	if err := decodeBody(r, &v); err != nil { jsonErr(w, "invalid body", 400); return }
 	// Auto-generate ID
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM vendors").Scan(&count)
-	v.ID = fmt.Sprintf("V-%03d", count+1)
+	var maxNum int
+	db.QueryRow("SELECT COALESCE(MAX(CAST(SUBSTR(id,3) AS INTEGER)),0) FROM vendors WHERE id LIKE 'V-%'").Scan(&maxNum)
+	v.ID = fmt.Sprintf("V-%03d", maxNum+1)
 	if v.Status == "" { v.Status = "active" }
 	_, err := db.Exec("INSERT INTO vendors (id,name,website,contact_name,contact_email,contact_phone,notes,status,lead_time_days) VALUES (?,?,?,?,?,?,?,?,?)",
 		v.ID, v.Name, v.Website, v.ContactName, v.ContactEmail, v.ContactPhone, v.Notes, v.Status, v.LeadTimeDays)

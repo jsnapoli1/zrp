@@ -28,7 +28,11 @@ window.module_apikeys = {
               </td>
             </tr>`).join('')}</tbody>
           </table>
-          ${keys.length === 0 ? '<p class="text-gray-400 text-center py-8">No API keys yet</p>' : ''}
+          ${keys.length === 0 ? `<div class="text-center py-12">
+            <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
+            <p class="text-gray-500 font-medium">No API keys yet</p>
+            <p class="text-gray-400 text-sm mt-1">Generate a key to access the API programmatically</p>
+          </div>` : ''}
         </div>`;
 
       document.getElementById('btn-new-key').onclick = () => {
@@ -40,6 +44,8 @@ window.module_apikeys = {
         `, async (overlay) => {
           const vals = getModalValues(overlay);
           if (!vals.name) { toast('Name is required', 'error'); return; }
+          const btn = overlay.querySelector('#modal-save');
+          btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Generating...';
           try {
             const body = { name: vals.name };
             if (vals.expires_at) body.expires_at = vals.expires_at;
@@ -66,7 +72,7 @@ window.module_apikeys = {
               toast('Key copied to clipboard');
             };
             setTimeout(load, 500);
-          } catch(e) { toast(e.message, 'error'); }
+          } catch(e) { toast(e.message, 'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
         });
       };
 

@@ -57,7 +57,7 @@ window.module_email = {
 
       <div class="card max-w-4xl mt-6">
         <h2 class="text-lg font-semibold mb-4">📋 Email Log</h2>
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto"><table class="w-full text-sm">
           <thead>
             <tr class="border-b">
               <th class="text-left py-2 px-2">To</th>
@@ -77,7 +77,7 @@ window.module_email = {
                 <td class="py-2 px-2 text-gray-500">${l.sent_at}</td>
               </tr>`).join('')}
           </tbody>
-        </table>
+        </table></div>
       </div>
     `;
 
@@ -95,6 +95,8 @@ window.module_email = {
     };
 
     window._emailSave = async () => {
+      const btn = container.querySelector('[onclick="window._emailSave()"]');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...'; }
       try {
         await api('PUT', 'email/config', {
           smtp_host: document.getElementById('email-host').value,
@@ -106,7 +108,7 @@ window.module_email = {
           enabled: enabled,
         });
         toast('Email settings saved');
-      } catch(e) { toast(e.message, 'error'); }
+      } catch(e) { toast(e.message, 'error'); } finally { if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; } }
     };
 
     window._emailTest = async () => {

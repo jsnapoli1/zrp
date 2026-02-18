@@ -9,8 +9,13 @@ window.module_users = {
             <h2 class="text-lg font-semibold">User Management</h2>
             <button class="btn btn-primary" onclick="window._userCreate()">+ New User</button>
           </div>
+          ${users.length === 0 ? `<div class="text-center py-12">
+            <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
+            <p class="text-gray-500 font-medium">No users yet</p>
+            <button class="btn btn-primary mt-4" onclick="window._userCreate()">+ New User</button>
+          </div>` : `<div class="overflow-x-auto">
           <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
-            <th class="pb-2">Username</th><th class="pb-2">Display Name</th><th class="pb-2">Role</th><th class="pb-2">Status</th><th class="pb-2">Last Login</th>
+            <th class="pb-2">Username</th><th class="pb-2">Display Name</th><th class="pb-2">Role</th><th class="pb-2">Status</th><th class="pb-2">Last Login</th><th class="pb-2 w-8"></th>
           </tr></thead><tbody>
             ${users.map(u => {
               const roleBadge = u.role === 'admin' ? '<span class="badge bg-red-100 text-red-800">admin</span>'
@@ -23,10 +28,10 @@ window.module_users = {
                 <td class="py-2">${roleBadge}</td>
                 <td class="py-2">${statusBadge}</td>
                 <td class="py-2 text-gray-500">${u.last_login ? u.last_login.substring(0,16) : 'Never'}</td>
+                <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
               </tr>`;
             }).join('')}
-          </tbody></table>
-          ${users.length === 0 ? '<p class="text-center text-gray-400 py-4">No users</p>' : ''}
+          </tbody></table></div>`}
         </div>`;
       } catch(e) {
         container.innerHTML = `<div class="card"><p class="text-red-500">Admin access required</p></div>`;
@@ -45,7 +50,11 @@ window.module_users = {
         </select></div>
       </div>`, async (overlay) => {
         const v = getModalValues(overlay);
-        try { await api('POST', 'users', v); toast('User created'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); }
+        if (!v.username?.trim()) { toast('Username is required', 'error'); return; }
+        if (!v.password?.trim()) { toast('Password is required', 'error'); return; }
+        const btn = overlay.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('POST', 'users', v); toast('User created'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
     };
 
@@ -69,6 +78,8 @@ window.module_users = {
       </div>`, async (overlay) => {
         const v = getModalValues(overlay);
         const active = overlay.querySelector('#user-active-toggle').checked ? 1 : 0;
+        const btn = overlay.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
         try {
           await api('PUT', 'users/' + id, { display_name: v.display_name, role: v.role, active });
           const newPw = overlay.querySelector('#user-new-password').value;
@@ -76,7 +87,7 @@ window.module_users = {
             await api('PUT', 'users/' + id + '/password', { password: newPw });
           }
           toast('User updated'); overlay.remove(); load();
-        } catch(e) { toast(e.message, 'error'); }
+        } catch(e) { toast(e.message, 'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
     };
 

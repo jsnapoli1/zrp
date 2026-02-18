@@ -1,5 +1,11 @@
 window.module_ecos = {
   render: async (container) => {
+    const bulk = setupBulkOps(container, 'ecos/bulk', [
+      {action:'approve', label:'✓ Approve', class:'bg-green-600 hover:bg-green-700 text-white'},
+      {action:'reject', label:'✗ Reject', class:'bg-yellow-600 hover:bg-yellow-700 text-white'},
+      {action:'implement', label:'🚀 Implement', class:'bg-blue-600 hover:bg-blue-700 text-white'},
+      {action:'delete', label:'🗑 Delete', class:'bg-red-600 hover:bg-red-700 text-white'},
+    ]);
     async function load() {
       const res = await api('GET', 'ecos');
       const items = res.data || [];
@@ -8,106 +14,31 @@ window.module_ecos = {
           <h2 class="text-lg font-semibold">Engineering Change Orders</h2>
           <button class="btn btn-primary" onclick="window._ecoCreate()">+ New ECO</button>
         </div>
+        ${items.length===0?`<div class="text-center py-12">
+          <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <p class="text-gray-500 font-medium">No ECOs yet</p>
+          <p class="text-gray-400 text-sm mt-1">Create your first Engineering Change Order to get started</p>
+          <button class="btn btn-primary mt-4" onclick="window._ecoCreate()">+ New ECO</button>
+        </div>`:`<div class="overflow-x-auto">
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
-          <th class="pb-2">ID</th><th class="pb-2">Title</th><th class="pb-2">Status</th><th class="pb-2">Priority</th><th class="pb-2">Created</th>
+          <th class="pb-2 w-8">${bulk.headerCheckbox()}</th>
+          <th class="pb-2">ID</th><th class="pb-2">Title</th><th class="pb-2">Status</th><th class="pb-2">Priority</th><th class="pb-2">Created</th><th class="pb-2 w-8"></th>
         </tr></thead><tbody>
           ${items.map(e => `<tr class="table-row border-b border-gray-100" onclick="window._ecoEdit('${e.id}')">
+            <td class="py-2">${bulk.checkbox(e.id)}</td>
             <td class="py-2 font-mono text-blue-600">${e.id}</td>
-            <td class="py-2">${e.title}</td>
+            <td class="py-2">${e.title}${e.ncr_id ? ' <span class="badge bg-purple-100 text-purple-800">From '+e.ncr_id+'</span>' : ''}</td>
             <td class="py-2">${badge(e.status)}</td>
             <td class="py-2">${badge(e.priority)}</td>
             <td class="py-2 text-gray-500">${e.created_at?.substring(0,10)}</td>
+            <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
           </tr>`).join('')}
         </tbody></table>
-        ${items.length===0?'<p class="text-center text-gray-400 py-4">No ECOs</p>':''}
+        </div>`}
       </div>`;
+      bulk.init();
     }
-
-    function ipnAutocompleteHTML(fieldId, currentValue) {
-      return `
-        <div class="relative">
-          <label class="label">Affected IPNs</label>
-          <div id="${fieldId}-tags" class="flex flex-wrap gap-1 mb-1"></div>
-          <input class="input" id="${fieldId}-input" placeholder="Type to search parts..." autocomplete="off">
-          <input type="hidden" data-field="affected_ipns" id="${fieldId}-hidden" value="${currentValue||''}">
-          <div id="${fieldId}-dropdown" class="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
-        </div>`;
-    }
-
-    function setupIPNAutocomplete(overlay, fieldId) {
-      const input = overlay.querySelector(`#${fieldId}-input`);
-      const dropdown = overlay.querySelector(`#${fieldId}-dropdown`);
-      const tagsEl = overlay.querySelector(`#${fieldId}-tags`);
-      const hiddenInput = overlay.querySelector(`#${fieldId}-hidden`);
-      let selected = [];
-
-      // Parse initial value
-      const initVal = hiddenInput.value.trim();
-      if (initVal) {
-        try {
-          if (initVal.startsWith('[')) selected = JSON.parse(initVal);
-          else selected = initVal.split(',').map(s=>s.trim()).filter(Boolean);
-        } catch(e) { selected = initVal.split(',').map(s=>s.trim()).filter(Boolean); }
-      }
-
-      function renderTags() {
-        tagsEl.innerHTML = selected.map((ipn,i) =>
-          `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-mono">
-            ${ipn}<button onclick="window._removeIPN_${fieldId}(${i})" class="text-blue-500 hover:text-red-500">&times;</button>
-          </span>`).join('');
-        hiddenInput.value = selected.join(',');
-      }
-
-      window[`_removeIPN_${fieldId}`] = (idx) => { selected.splice(idx, 1); renderTags(); };
-      renderTags();
-
-      let debounceTimer;
-      input.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(async () => {
-          const q = input.value.trim();
-          if (q.length < 2) { dropdown.classList.add('hidden'); return; }
-          try {
-            const res = await api('GET', `parts?q=${encodeURIComponent(q)}&limit=10`);
-            const parts = res.data || [];
-            if (parts.length === 0) { dropdown.classList.add('hidden'); return; }
-            dropdown.innerHTML = parts.map(p =>
-              `<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm" data-ipn="${p.ipn}">
-                <span class="font-mono text-blue-600">${p.ipn}</span>
-                <span class="text-gray-500 ml-2">${p.fields?.description || p.fields?.Description || ''}</span>
-              </div>`).join('');
-            dropdown.classList.remove('hidden');
-            dropdown.querySelectorAll('[data-ipn]').forEach(el => {
-              el.addEventListener('click', () => {
-                const ipn = el.dataset.ipn;
-                if (!selected.includes(ipn)) { selected.push(ipn); renderTags(); }
-                input.value = '';
-                dropdown.classList.add('hidden');
-              });
-            });
-          } catch(e) { dropdown.classList.add('hidden'); }
-        }, 300);
-      });
-
-      input.addEventListener('blur', () => setTimeout(() => dropdown.classList.add('hidden'), 200));
-    }
-
-    function affectedPartsTable(parts) {
-      if (!parts || parts.length === 0) return '';
-      return `<div class="mt-4"><h3 class="text-sm font-semibold text-gray-700 mb-2">Affected Parts</h3>
-        <table class="w-full text-xs"><thead><tr class="border-b text-left text-gray-500">
-          <th class="pb-1">IPN</th><th class="pb-1">Description</th><th class="pb-1">MPN</th><th class="pb-1">Manufacturer</th><th class="pb-1">Status</th>
-        </tr></thead><tbody>
-          ${parts.map(p => `<tr class="border-b border-gray-100">
-            <td class="py-1 font-mono text-blue-600">${p.ipn||''}</td>
-            <td class="py-1">${p.description||p.Description||''}</td>
-            <td class="py-1">${p.mpn||p.MPN||p.part_number||''}</td>
-            <td class="py-1">${p.manufacturer||p.Manufacturer||p.mfr||''}</td>
-            <td class="py-1">${p.status||p.Status||''}</td>
-          </tr>`).join('')}
-        </tbody></table></div>`;
-    }
-
+    container.addEventListener('bulk-reload', load);
     const formHTML = (e={}) => `
       <div class="space-y-3">
         <div><label class="label">Title</label><input class="input" data-field="title" value="${e.title||''}"></div>
@@ -120,32 +51,32 @@ window.module_ecos = {
             ${['low','normal','high','critical'].map(s=>`<option ${e.priority===s?'selected':''}>${s}</option>`).join('')}
           </select></div>
         </div>
-        ${ipnAutocompleteHTML('eco-ipns', e.affected_ipns||'')}
+        <div><label class="label">Affected IPNs (comma-separated)</label><input class="input" data-field="affected_ipns" value="${e.affected_ipns||''}"></div>
       </div>`;
-
     window._ecoCreate = () => {
-      const overlay = showModal('New ECO', formHTML(), async (overlay) => {
+      showModal('New ECO', formHTML(), async (overlay) => {
         const v = getModalValues(overlay);
-        try { await api('POST', 'ecos', v); toast('ECO created'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); }
+        if (!v.title?.trim()) { toast('Title is required', 'error'); return; }
+        const btn = overlay.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('POST', 'ecos', v); toast('ECO created'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
-      setupIPNAutocomplete(overlay, 'eco-ipns');
     };
-
     window._ecoEdit = async (id) => {
       const res = await api('GET', 'ecos/' + id);
       const e = res.data;
       const ncrBadge = e.ncr_id ? `<div class="mb-3"><span class="badge bg-purple-100 text-purple-800 cursor-pointer" onclick="navigate('ncr')">From ${e.ncr_id}</span></div>` : '';
-      const overlay = showModal('Edit ECO: ' + id, ncrBadge + formHTML(e) +
-        affectedPartsTable(e.affected_parts) + `
+      const overlay = showModal('ECO: ' + e.id + ' — ' + (e.title||'').substring(0,40), ncrBadge + formHTML(e) + `
         <div class="flex gap-2 mt-4">
           ${e.status==='review'||e.status==='draft'?`<button class="btn btn-success" id="eco-approve">✓ Approve</button>`:''}
           ${e.status==='approved'?`<button class="btn btn-primary" id="eco-implement">🚀 Implement</button>`:''}
-        </div>` + attachmentsSection('eco', id), async (overlay) => {
+        </div>`, async (overlay) => {
         const v = getModalValues(overlay);
-        try { await api('PUT', 'ecos/' + id, v); toast('ECO updated'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); }
+        if (!v.title?.trim()) { toast('Title is required', 'error'); return; }
+        const btn = overlay.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('PUT', 'ecos/' + id, v); toast('ECO updated'); overlay.remove(); load(); } catch(e) { toast(e.message, 'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
-      setupIPNAutocomplete(overlay, 'eco-ipns');
-      initAttachments(overlay, 'eco', id);
       overlay.querySelector('#eco-approve')?.addEventListener('click', async () => {
         await api('POST', 'ecos/' + id + '/approve'); toast('ECO approved'); overlay.remove(); load();
       });

@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Checkout
         run: |
-          git clone https://gitea.zonit.com/jackn/zrp.git zrp
+          git clone https://github.com/yourusername/zrp.git zrp
           cd zrp
           git checkout ${{ github.sha }}
 
@@ -38,7 +38,7 @@ jobs:
         run: |
           cd zrp
           # Use a test DB
-          go run . --pmDir ~/Documents/Zonit/zonit-dev/parts/database/ &
+          go run . --pmDir ./sample-data/ &
           sleep 4
           curl -sf http://localhost:9000/api/v1/dashboard || exit 1
 

@@ -192,7 +192,7 @@ func handleQuotePDF(w http.ResponseWriter, r *http.Request, id string) {
 <div class="header">
   <div>
     <h1>ZRP — Quote</h1>
-    <div style="font-size:10pt;color:#555">Zonit Resource Planning</div>
+    <div style="font-size:10pt;color:#555">` + companyName + `</div>
   </div>
   <div style="text-align:right;font-size:10pt">
     <div><strong>Quote:</strong> %s</div>
@@ -219,7 +219,7 @@ func handleQuotePDF(w http.ResponseWriter, r *http.Request, id string) {
 
 <div class="footer">
   <p><strong>Terms:</strong> Net 30. Prices valid through the date shown above.</p>
-  <p><strong>Contact:</strong> sales@zonit.com | Zonit Structured Solutions, LLC</p>
+  <p><strong>Contact:</strong> ` + companyEmail + ` | ` + companyName + `</p>
 </div>
 
 <script>window.onload = () => window.print()</script>

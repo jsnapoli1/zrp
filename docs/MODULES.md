@@ -5,7 +5,7 @@
 ZRP requires authentication. On first launch, a default admin account is created:
 
 - **Username:** `admin`
-- **Password:** `zonit123`
+- **Password:** `changeme`
 
 ### Login
 

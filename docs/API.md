@@ -60,7 +60,7 @@ Authenticate and create a session. No auth required.
 **Request Body:**
 
 ```json
-{ "username": "admin", "password": "zonit123" }
+{ "username": "admin", "password": "changeme" }
 ```
 
 **Response (200):**
@@ -76,7 +76,7 @@ Sets `zrp_session` cookie (HttpOnly, 24h expiry).
 ```bash
 curl -X POST http://localhost:9000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"zonit123"}' \
+  -d '{"username":"admin","password":"changeme"}' \
   -c cookies.txt
 ```
 

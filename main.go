@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
 var partsDir string
 var gitplmUIURL string
+var companyName string
+var companyEmail string
 
 func main() {
 	pmDir := flag.String("pmDir", "", "Path to gitplm parts database directory")
@@ -22,6 +25,15 @@ func main() {
 
 	partsDir = *pmDir
 	gitplmUIURL = *gitplmUI
+
+	companyName = os.Getenv("ZRP_COMPANY_NAME")
+	if companyName == "" {
+		companyName = "Your Company"
+	}
+	companyEmail = os.Getenv("ZRP_COMPANY_EMAIL")
+	if companyEmail == "" {
+		companyEmail = "admin@example.com"
+	}
 
 	if err := initDB(*dbPath); err != nil {
 		log.Fatal("DB init failed:", err)

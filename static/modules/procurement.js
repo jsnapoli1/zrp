@@ -11,8 +11,14 @@ window.module_procurement = {
             <button class="btn btn-primary" onclick="window._poCreate()">+ New PO</button>
           </div>
         </div>
+        ${items.length===0?`<div class="text-center py-12">
+          <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"/></svg>
+          <p class="text-gray-500 font-medium">No purchase orders yet</p>
+          <p class="text-gray-400 text-sm mt-1">Create your first PO to get started</p>
+          <button class="btn btn-primary mt-4" onclick="window._poCreate()">+ New PO</button>
+        </div>`:`<div class="overflow-x-auto">
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
-          <th class="pb-2">PO #</th><th class="pb-2">Vendor</th><th class="pb-2">Status</th><th class="pb-2">Expected</th><th class="pb-2">Created</th>
+          <th class="pb-2">PO #</th><th class="pb-2">Vendor</th><th class="pb-2">Status</th><th class="pb-2">Expected</th><th class="pb-2">Created</th><th class="pb-2 w-8"></th>
         </tr></thead><tbody>
           ${items.map(p => `<tr class="table-row border-b border-gray-100" onclick="window._poEdit('${p.id}')">
             <td class="py-2 font-mono text-blue-600">${p.id}</td>
@@ -20,9 +26,10 @@ window.module_procurement = {
             <td class="py-2">${badge(p.status)}</td>
             <td class="py-2">${p.expected_date||''}</td>
             <td class="py-2 text-gray-500">${p.created_at?.substring(0,10)}</td>
+            <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
           </tr>`).join('')}
         </tbody></table>
-        ${items.length===0?'<p class="text-center text-gray-400 py-4">No purchase orders</p>':''}
+        </div>`}
       </div>`;
     }
 
@@ -64,7 +71,11 @@ window.module_procurement = {
         <div><label class="label">Expected Date</label><input class="input" type="date" data-field="expected_date"></div>
         <div><label class="label">Notes</label><textarea class="input" data-field="notes" rows="2"></textarea></div>
       </div>`, async (o) => {
-        try { await api('POST', 'pos', getModalValues(o)); toast('PO created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
+        const v = getModalValues(o);
+        if (!v.vendor_id) { toast('Please select a vendor', 'error'); return; }
+        const btn = o.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('POST', 'pos', v); toast('PO created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
     };
     window._poEdit = async (id) => {

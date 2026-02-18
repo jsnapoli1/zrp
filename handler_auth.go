@@ -49,11 +49,21 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create session
-	token := generateToken()
+	// Clean expired sessions
+	db.Exec("DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP")
+
+	// Create session with retry
+	var token string
 	expires := time.Now().Add(24 * time.Hour)
-	_, err = db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-		token, id, expires.Format("2006-01-02 15:04:05"))
+	for i := 0; i < 3; i++ {
+		token = generateToken()
+		_, err = db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+			token, id, expires.Format("2006-01-02 15:04:05"))
+		if err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		jsonErr(w, "Failed to create session", 500)
 		return

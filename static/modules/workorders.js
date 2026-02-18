@@ -13,18 +13,25 @@ window.module_workorders = {
           <h2 class="text-lg font-semibold">Work Orders</h2>
           <button class="btn btn-primary" onclick="window._woCreate()">+ New Work Order</button>
         </div>
+        ${items.length===0?`<div class="text-center py-12">
+          <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <p class="text-gray-500 font-medium">No work orders yet</p>
+          <p class="text-gray-400 text-sm mt-1">Create your first work order to get started</p>
+          <button class="btn btn-primary mt-4" onclick="window._woCreate()">+ New Work Order</button>
+        </div>`:`<div class="overflow-x-auto">
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
           <th class="pb-2 w-8">${bulk.headerCheckbox()}</th>
-          <th class="pb-2">WO #</th><th class="pb-2">Assembly</th><th class="pb-2">Qty</th><th class="pb-2">Status</th><th class="pb-2">Priority</th><th class="pb-2">Created</th>
+          <th class="pb-2">WO #</th><th class="pb-2">Assembly</th><th class="pb-2">Qty</th><th class="pb-2">Status</th><th class="pb-2">Priority</th><th class="pb-2">Created</th><th class="pb-2 w-8"></th>
         </tr></thead><tbody>
           ${items.map(w => `<tr class="table-row border-b border-gray-100" onclick="window._woEdit('${w.id}')">
             <td class="py-2">${bulk.checkbox(w.id)}</td>
             <td class="py-2 font-mono text-blue-600">${w.id}</td><td class="py-2">${w.assembly_ipn}</td>
             <td class="py-2">${w.qty}</td><td class="py-2">${badge(w.status)}</td>
             <td class="py-2">${badge(w.priority)}</td><td class="py-2 text-gray-500">${w.created_at?.substring(0,10)}</td>
+            <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
           </tr>`).join('')}
         </tbody></table>
-        ${items.length===0?'<p class="text-center text-gray-400 py-4">No work orders</p>':''}
+        </div>`}
       </div>`;
       bulk.init();
     }
@@ -44,13 +51,19 @@ window.module_workorders = {
     </div>`;
     window._woCreate = () => showModal('New Work Order', form(), async (o) => {
       const v = getModalValues(o); v.qty = parseInt(v.qty)||1;
-      try { await api('POST','workorders',v); toast('WO created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
+      if (!v.assembly_ipn?.trim()) { toast('Assembly IPN is required', 'error'); return; }
+      const btn = o.querySelector('#modal-save');
+      btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+      try { await api('POST','workorders',v); toast('WO created'); o.remove(); load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
     });
     window._woEdit = async (id) => {
       const w = (await api('GET','workorders/'+id)).data;
       const overlay = showModal('WO: '+id, form(w)+`<div class="flex gap-2 mt-3"><button class="btn btn-secondary" id="wo-bom">📋 View BOM</button><button class="btn btn-secondary" onclick="window.open('/api/v1/workorders/${id}/pdf','_blank')">🖨️ Print Traveler</button></div>` + attachmentsSection('workorder', id), async (o) => {
         const v = getModalValues(o); v.qty = parseInt(v.qty)||1;
-        try { await api('PUT','workorders/'+id,v); toast('Updated'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
+        if (!v.assembly_ipn?.trim()) { toast('Assembly IPN is required', 'error'); return; }
+        const btn = o.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('PUT','workorders/'+id,v); toast('Updated'); o.remove(); load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
       initAttachments(overlay, 'workorder', id);
       document.getElementById('wo-bom')?.addEventListener('click', async () => {

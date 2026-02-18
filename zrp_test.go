@@ -29,7 +29,7 @@ func setupTestDB(t *testing.T) func() {
 // loginAdmin logs in as admin and returns the session cookie
 func loginAdmin(t *testing.T) *http.Cookie {
 	t.Helper()
-	body := `{"username":"admin","password":"zonit123"}`
+	body := `{"username":"admin","password":"changeme"}`
 	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -212,7 +212,7 @@ func TestDeactivateUser(t *testing.T) {
 	}
 
 	// Deactivated user can't login
-	loginBody := `{"username":"engineer","password":"zonit123"}`
+	loginBody := `{"username":"engineer","password":"changeme"}`
 	req2 := httptest.NewRequest("POST", "/auth/login", strings.NewReader(loginBody))
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()

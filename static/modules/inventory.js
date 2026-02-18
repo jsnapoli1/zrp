@@ -17,9 +17,15 @@ window.module_inventory = {
             <button class="btn btn-primary" onclick="window._invReceive()">+ Quick Receive</button>
           </div>
         </div>
+        ${items.length===0?`<div class="text-center py-12">
+          <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          <p class="text-gray-500 font-medium">No inventory records yet</p>
+          <p class="text-gray-400 text-sm mt-1">Use Quick Receive to add your first stock</p>
+          <button class="btn btn-primary mt-4" onclick="window._invReceive()">+ Quick Receive</button>
+        </div>`:`<div class="overflow-x-auto">
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
           <th class="pb-2 w-8">${bulk.headerCheckbox()}</th>
-          <th class="pb-2">IPN</th><th class="pb-2">Description</th><th class="pb-2">On Hand</th><th class="pb-2">Reserved</th><th class="pb-2">Available</th><th class="pb-2">Location</th><th class="pb-2">Reorder Point</th>
+          <th class="pb-2">IPN</th><th class="pb-2">Description</th><th class="pb-2">On Hand</th><th class="pb-2">Reserved</th><th class="pb-2">Available</th><th class="pb-2">Location</th><th class="pb-2">Reorder Point</th><th class="pb-2 w-8"></th>
         </tr></thead><tbody>
           ${items.map(i => {
             const low = i.reorder_point > 0 && i.qty_on_hand <= i.reorder_point;
@@ -32,10 +38,11 @@ window.module_inventory = {
               <td class="py-2">${i.qty_on_hand - i.qty_reserved}</td>
               <td class="py-2">${i.location||''}</td>
               <td class="py-2">${i.reorder_point}</td>
+              <td class="py-2 text-gray-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
             </tr>`;
           }).join('')}
         </tbody></table>
-        ${items.length===0?'<p class="text-center text-gray-400 py-4">No inventory records</p>':''}
+        </div>`}
       </div>`;
       bulk.init();
     }
@@ -53,7 +60,11 @@ window.module_inventory = {
         <div><label class="label">Notes</label><input class="input" data-field="notes"></div>
       </div>`, async (o) => {
         const v = getModalValues(o);
-        try { await api('POST', 'inventory/transact', {ipn:v.ipn, type:'receive', qty:parseFloat(v.qty), reference:v.reference, notes:v.notes}); toast('Stock received'); o.remove(); load(); } catch(e) { toast(e.message,'error'); }
+        if (!v.ipn?.trim()) { toast('IPN is required', 'error'); return; }
+        if (!v.qty || parseFloat(v.qty) <= 0) { toast('Quantity must be greater than 0', 'error'); return; }
+        const btn = o.querySelector('#modal-save');
+        btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...';
+        try { await api('POST', 'inventory/transact', {ipn:v.ipn, type:'receive', qty:parseFloat(v.qty), reference:v.reference, notes:v.notes}); toast('Stock received'); o.remove(); load(); } catch(e) { toast(e.message,'error'); } finally { btn.disabled = false; btn.textContent = 'Save'; }
       });
       let debounce = null;
       const inp = document.getElementById('inv-ipn-input');

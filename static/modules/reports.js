@@ -62,7 +62,7 @@ window.module_reports = {
       let html = '';
       for (const g of (data.groups || [])) {
         html += `<h3 class="font-semibold mt-4 mb-2">${g.category} <span class="text-sm text-gray-500">(Subtotal: $${g.subtotal.toFixed(2)})</span></h3>`;
-        html += `<table class="w-full text-sm mb-2"><thead><tr class="border-b text-left text-gray-500">
+        html += `<div class="overflow-x-auto"><table class="w-full text-sm mb-2"><thead><tr class="border-b text-left text-gray-500">
           <th class="pb-1">IPN</th><th class="pb-1">Description</th><th class="pb-1 text-right">Qty</th><th class="pb-1 text-right">Unit Price</th><th class="pb-1 text-right">Subtotal</th>
         </tr></thead><tbody>`;
         for (const it of g.items) {
@@ -70,14 +70,14 @@ window.module_reports = {
             <td class="py-1 text-right">${it.qty_on_hand}</td><td class="py-1 text-right">$${it.unit_price.toFixed(4)}</td>
             <td class="py-1 text-right font-medium">$${it.subtotal.toFixed(2)}</td></tr>`;
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
       }
       html += `<div class="mt-4 pt-4 border-t text-lg font-bold text-right">Grand Total: $${(data.grand_total||0).toFixed(2)}</div>`;
       return html;
     }
 
     function renderOpenECOs(data) {
-      let html = `<table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
+      let html = `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
         <th class="pb-2">ID</th><th class="pb-2">Title</th><th class="pb-2">Status</th><th class="pb-2">Priority</th><th class="pb-2">Created By</th><th class="pb-2 text-right">Age (Days)</th>
       </tr></thead><tbody>`;
       for (const e of data) {
@@ -85,7 +85,7 @@ window.module_reports = {
           <td class="py-2">${badge(e.status)}</td><td class="py-2">${badge(e.priority)}</td>
           <td class="py-2">${e.created_by}</td><td class="py-2 text-right">${e.age_days}</td></tr>`;
       }
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
       if (data.length === 0) html = '<p class="text-gray-400 text-center py-4">No open ECOs</p>';
       return html;
     }
@@ -109,7 +109,7 @@ window.module_reports = {
     }
 
     function renderLowStock(data) {
-      let html = `<table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
+      let html = `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
         <th class="pb-2">IPN</th><th class="pb-2">Description</th><th class="pb-2 text-right">On Hand</th><th class="pb-2 text-right">Reorder Point</th><th class="pb-2 text-right">Suggested Order</th><th class="pb-2"></th>
       </tr></thead><tbody>`;
       for (const it of data) {
@@ -118,7 +118,7 @@ window.module_reports = {
           <td class="py-2 text-right font-medium">${it.suggested_order}</td>
           <td class="py-2"><button class="text-blue-600 text-xs hover:underline" onclick="navigate('procurement')">Create PO →</button></td></tr>`;
       }
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
       if (data.length === 0) html = '<p class="text-green-600 text-center py-4">✅ All items above reorder point</p>';
       return html;
     }
