@@ -11,7 +11,7 @@ import { Checkbox } from "../components/ui/checkbox";
 import { AlertTriangle, ArrowLeft, FileText, Save } from "lucide-react";
 import { api, type NCR } from "../lib/api";
 
-export function NCRDetail() {
+function NCRDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [ncr, setNCR] = useState<NCR | null>(null);
@@ -350,3 +350,4 @@ export function NCRDetail() {
     </div>
   );
 }
+export default NCRDetail;

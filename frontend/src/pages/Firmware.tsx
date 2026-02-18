@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Cpu, Plus, Play, Pause } from "lucide-react";
 import { api, type FirmwareCampaign } from "../lib/api";
 
-export function Firmware() {
+function Firmware() {
   const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<FirmwareCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -361,3 +361,4 @@ export function Firmware() {
     </div>
   );
 }
+export default Firmware;

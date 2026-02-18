@@ -38,7 +38,7 @@ import {
 } from "../components/ui/select";
 import { api, type PurchaseOrder, type Vendor } from "../lib/api";
 
-export function Procurement() {
+function Procurement() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [parts, setParts] = useState<{ ipn: string; description?: string }[]>([]);
@@ -509,3 +509,4 @@ export function Procurement() {
     </div>
   );
 }
+export default Procurement;

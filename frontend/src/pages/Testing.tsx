@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { TestTube, Plus, CheckCircle, XCircle } from "lucide-react";
 import { api, type TestRecord } from "../lib/api";
 
-export function Testing() {
+function Testing() {
   const [testRecords, setTestRecords] = useState<TestRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -347,3 +347,4 @@ export function Testing() {
     </div>
   );
 }
+export default Testing;

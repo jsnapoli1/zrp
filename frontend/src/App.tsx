@@ -1,36 +1,40 @@
+import React, { Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { AppLayout } from "./layouts/AppLayout";
-import { Dashboard } from "./pages/Dashboard";
-import { Inventory } from "./pages/Inventory";
-import { InventoryDetail } from "./pages/InventoryDetail";
-import { Procurement } from "./pages/Procurement";
-import { PODetail } from "./pages/PODetail";
-import { Vendors } from "./pages/Vendors";
-import { VendorDetail } from "./pages/VendorDetail";
-import { WorkOrders } from "./pages/WorkOrders";
-import { WorkOrderDetail } from "./pages/WorkOrderDetail";
-import { NCRs } from "./pages/NCRs";
-import { NCRDetail } from "./pages/NCRDetail";
-import { RMAs } from "./pages/RMAs";
-import { RMADetail } from "./pages/RMADetail";
-import { Testing } from "./pages/Testing";
-import { Devices } from "./pages/Devices";
-import { DeviceDetail } from "./pages/DeviceDetail";
-import { Firmware } from "./pages/Firmware";
-import { FirmwareDetail } from "./pages/FirmwareDetail";
-import { Quotes } from "./pages/Quotes";
-import { QuoteDetail } from "./pages/QuoteDetail";
-import { Parts } from "./pages/Parts";
-import { PartDetail } from "./pages/PartDetail";
-import { ECOs } from "./pages/ECOs";
-import { ECODetail } from "./pages/ECODetail";
-import { Documents } from "./pages/Documents";
-import { Calendar } from "./pages/Calendar";
-import { Reports } from "./pages/Reports";
-import { Audit } from "./pages/Audit";
-import { Users } from "./pages/Users";
-import { APIKeys } from "./pages/APIKeys";
-import { EmailSettings } from "./pages/EmailSettings";
+import { LoadingSpinner } from "./components/LoadingSpinner";
+
+// Lazy load all pages for code-splitting
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+const Calendar = React.lazy(() => import("./pages/Calendar"));
+const Parts = React.lazy(() => import("./pages/Parts"));
+const PartDetail = React.lazy(() => import("./pages/PartDetail"));
+const ECOs = React.lazy(() => import("./pages/ECOs"));
+const ECODetail = React.lazy(() => import("./pages/ECODetail"));
+const Documents = React.lazy(() => import("./pages/Documents"));
+const Inventory = React.lazy(() => import("./pages/Inventory"));
+const InventoryDetail = React.lazy(() => import("./pages/InventoryDetail"));
+const Procurement = React.lazy(() => import("./pages/Procurement"));
+const PODetail = React.lazy(() => import("./pages/PODetail"));
+const Vendors = React.lazy(() => import("./pages/Vendors"));
+const VendorDetail = React.lazy(() => import("./pages/VendorDetail"));
+const WorkOrders = React.lazy(() => import("./pages/WorkOrders"));
+const WorkOrderDetail = React.lazy(() => import("./pages/WorkOrderDetail"));
+const NCRs = React.lazy(() => import("./pages/NCRs"));
+const NCRDetail = React.lazy(() => import("./pages/NCRDetail"));
+const RMAs = React.lazy(() => import("./pages/RMAs"));
+const RMADetail = React.lazy(() => import("./pages/RMADetail"));
+const Testing = React.lazy(() => import("./pages/Testing"));
+const Devices = React.lazy(() => import("./pages/Devices"));
+const DeviceDetail = React.lazy(() => import("./pages/DeviceDetail"));
+const Firmware = React.lazy(() => import("./pages/Firmware"));
+const FirmwareDetail = React.lazy(() => import("./pages/FirmwareDetail"));
+const Quotes = React.lazy(() => import("./pages/Quotes"));
+const QuoteDetail = React.lazy(() => import("./pages/QuoteDetail"));
+const Reports = React.lazy(() => import("./pages/Reports"));
+const Audit = React.lazy(() => import("./pages/Audit"));
+const Users = React.lazy(() => import("./pages/Users"));
+const APIKeys = React.lazy(() => import("./pages/APIKeys"));
+const EmailSettings = React.lazy(() => import("./pages/EmailSettings"));
 
 // Placeholder components for other pages
 const PlaceholderPage = ({ title }: { title: string }) => (
@@ -54,57 +58,59 @@ const PlaceholderPage = ({ title }: { title: string }) => (
 function App() {
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<AppLayout />}>
-          <Route index element={<Dashboard />} />
-          
-          {/* Engineering */}
-          <Route path="/parts" element={<Parts />} />
-          <Route path="/parts/:ipn" element={<PartDetail />} />
-          <Route path="/ecos" element={<ECOs />} />
-          <Route path="/ecos/:id" element={<ECODetail />} />
-          <Route path="/documents" element={<Documents />} />
-          <Route path="/testing" element={<Testing />} />
-          <Route path="/ncrs" element={<NCRs />} />
-          <Route path="/ncrs/:id" element={<NCRDetail />} />
-          <Route path="/rmas" element={<RMAs />} />
-          <Route path="/rmas/:id" element={<RMADetail />} />
-          <Route path="/devices" element={<Devices />} />
-          <Route path="/devices/:serialNumber" element={<DeviceDetail />} />
-          <Route path="/firmware" element={<Firmware />} />
-          <Route path="/firmware/:id" element={<FirmwareDetail />} />
-          <Route path="/quotes" element={<Quotes />} />
-          <Route path="/quotes/:id" element={<QuoteDetail />} />
-          
-          {/* Supply Chain */}
-          <Route path="/vendors" element={<Vendors />} />
-          <Route path="/vendors/:id" element={<VendorDetail />} />
-          <Route path="/purchase-orders" element={<Procurement />} />
-          <Route path="/purchase-orders/:id" element={<PODetail />} />
-          <Route path="/procurement" element={<Procurement />} />
-          
-          {/* Manufacturing */}
-          <Route path="/work-orders" element={<WorkOrders />} />
-          <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/inventory/:ipn" element={<InventoryDetail />} />
-          
-          {/* Field & Service */}
-          <Route path="/field-reports" element={<PlaceholderPage title="Field Reports" />} />
-          <Route path="/pricing" element={<PlaceholderPage title="Pricing" />} />
-          
-          {/* Reports */}
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/calendar" element={<Calendar />} />
-          
-          {/* Admin */}
-          <Route path="/users" element={<Users />} />
-          <Route path="/audit" element={<Audit />} />
-          <Route path="/api-keys" element={<APIKeys />} />
-          <Route path="/email-settings" element={<EmailSettings />} />
-          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<LoadingSpinner />}>
+        <Routes>
+          <Route path="/" element={<AppLayout />}>
+            <Route index element={<Dashboard />} />
+            
+            {/* Engineering */}
+            <Route path="/parts" element={<Parts />} />
+            <Route path="/parts/:ipn" element={<PartDetail />} />
+            <Route path="/ecos" element={<ECOs />} />
+            <Route path="/ecos/:id" element={<ECODetail />} />
+            <Route path="/documents" element={<Documents />} />
+            <Route path="/testing" element={<Testing />} />
+            <Route path="/ncrs" element={<NCRs />} />
+            <Route path="/ncrs/:id" element={<NCRDetail />} />
+            <Route path="/rmas" element={<RMAs />} />
+            <Route path="/rmas/:id" element={<RMADetail />} />
+            <Route path="/devices" element={<Devices />} />
+            <Route path="/devices/:serialNumber" element={<DeviceDetail />} />
+            <Route path="/firmware" element={<Firmware />} />
+            <Route path="/firmware/:id" element={<FirmwareDetail />} />
+            <Route path="/quotes" element={<Quotes />} />
+            <Route path="/quotes/:id" element={<QuoteDetail />} />
+            
+            {/* Supply Chain */}
+            <Route path="/vendors" element={<Vendors />} />
+            <Route path="/vendors/:id" element={<VendorDetail />} />
+            <Route path="/purchase-orders" element={<Procurement />} />
+            <Route path="/purchase-orders/:id" element={<PODetail />} />
+            <Route path="/procurement" element={<Procurement />} />
+            
+            {/* Manufacturing */}
+            <Route path="/work-orders" element={<WorkOrders />} />
+            <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/inventory/:ipn" element={<InventoryDetail />} />
+            
+            {/* Field & Service */}
+            <Route path="/field-reports" element={<PlaceholderPage title="Field Reports" />} />
+            <Route path="/pricing" element={<PlaceholderPage title="Pricing" />} />
+            
+            {/* Reports */}
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/calendar" element={<Calendar />} />
+            
+            {/* Admin */}
+            <Route path="/users" element={<Users />} />
+            <Route path="/audit" element={<Audit />} />
+            <Route path="/api-keys" element={<APIKeys />} />
+            <Route path="/email-settings" element={<EmailSettings />} />
+            <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </Router>
   );
 }

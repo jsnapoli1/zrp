@@ -11,7 +11,7 @@ import { Separator } from "../components/ui/separator";
 import { RotateCcw, ArrowLeft, Save, Truck, CheckCircle } from "lucide-react";
 import { api, type RMA } from "../lib/api";
 
-export function RMADetail() {
+function RMADetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [rma, setRMA] = useState<RMA | null>(null);
@@ -339,3 +339,4 @@ export function RMADetail() {
     </div>
   );
 }
+export default RMADetail;

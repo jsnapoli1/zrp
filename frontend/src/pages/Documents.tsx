@@ -79,7 +79,7 @@ const categories = [
   'other'
 ];
 
-export function Documents() {
+function Documents() {
   const [documents, setDocuments] = useState<DocumentWithAttachments[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -574,3 +574,4 @@ export function Documents() {
     </div>
   );
 }
+export default Documents;

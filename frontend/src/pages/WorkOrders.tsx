@@ -40,7 +40,7 @@ import {
 } from "../components/ui/select";
 import { api, type WorkOrder, type Part } from "../lib/api";
 
-export function WorkOrders() {
+function WorkOrders() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
   const [loading, setLoading] = useState(true);
@@ -446,3 +446,4 @@ export function WorkOrders() {
     </div>
   );
 }
+export default WorkOrders;

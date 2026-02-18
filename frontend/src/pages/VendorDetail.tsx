@@ -33,7 +33,7 @@ interface PriceCatalogItem {
   last_updated: string;
 }
 
-export function VendorDetail() {
+function VendorDetail() {
   const { id } = useParams<{ id: string }>();
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
@@ -479,3 +479,4 @@ export function VendorDetail() {
     </div>
   );
 }
+export default VendorDetail;

@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { AlertTriangle, Plus } from "lucide-react";
 import { api, type NCR } from "../lib/api";
 
-export function NCRs() {
+function NCRs() {
   const navigate = useNavigate();
   const [ncrs, setNCRs] = useState<NCR[]>([]);
   const [loading, setLoading] = useState(true);
@@ -222,3 +222,4 @@ export function NCRs() {
     </div>
   );
 }
+export default NCRs;

@@ -115,7 +115,7 @@ function BOMTree({ node, level = 0, onPartClick }: BOMTreeProps) {
   );
 }
 
-export function PartDetail() {
+function PartDetail() {
   const { ipn } = useParams<{ ipn: string }>();
   const navigate = useNavigate();
   const [part, setPart] = useState<PartWithDetails | null>(null);
@@ -436,3 +436,4 @@ export function PartDetail() {
     </div>
   );
 }
+export default PartDetail;

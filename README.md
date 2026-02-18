@@ -1,6 +1,6 @@
 # ZRP — Resource Planning
 
-A single-binary ERP system for hardware electronics manufacturing. Go backend, vanilla JS frontend, SQLite database. No dependencies to deploy — just run the binary.
+A single-binary ERP system for hardware electronics manufacturing. Go backend, React frontend, SQLite database. No dependencies to deploy — just run the binary.
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -74,6 +74,10 @@ go build -o zrp .
 ./zrp --pmDir /path/to/gitplm/parts/database
 # Open http://localhost:9000
 ```
+
+## Frontend
+
+**React frontend** in `frontend/` is the primary UI — fully responsive, modern components with shadcn/ui and Tailwind CSS. The legacy templates in `templates/` and `static/` are kept for backward compatibility but the React app provides the main user experience.
 
 ## Requirements
 

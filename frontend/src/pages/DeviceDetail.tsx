@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Smartphone, ArrowLeft, Save, History, RotateCcw } from "lucide-react";
 import { api, type Device, type RMA } from "../lib/api";
 
-export function DeviceDetail() {
+function DeviceDetail() {
   const { serialNumber } = useParams<{ serialNumber: string }>();
   const navigate = useNavigate();
   const [device, setDevice] = useState<Device | null>(null);
@@ -421,3 +421,4 @@ export function DeviceDetail() {
     </div>
   );
 }
+export default DeviceDetail;

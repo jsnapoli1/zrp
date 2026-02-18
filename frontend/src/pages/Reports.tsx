@@ -92,7 +92,7 @@ const reportCards: ReportCard[] = [
   },
 ];
 
-export function Reports() {
+function Reports() {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -373,3 +373,4 @@ export function Reports() {
     </div>
   );
 }
+export default Reports;

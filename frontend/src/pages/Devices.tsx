@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Smartphone, Plus, Upload, Download } from "lucide-react";
 import { api, type Device } from "../lib/api";
 
-export function Devices() {
+function Devices() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -315,3 +315,4 @@ export function Devices() {
     </div>
   );
 }
+export default Devices;

@@ -30,7 +30,7 @@ interface CreateKeyForm {
   name: string;
 }
 
-export function APIKeys() {
+function APIKeys() {
   const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -506,3 +506,4 @@ export function APIKeys() {
     </div>
   );
 }
+export default APIKeys;

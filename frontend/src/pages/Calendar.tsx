@@ -23,7 +23,7 @@ const typeConfig = {
   quote: { label: 'Quote', color: 'bg-purple-500', textColor: 'text-purple-700', bgColor: 'bg-purple-50' },
 };
 
-export function Calendar() {
+function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -285,3 +285,4 @@ export function Calendar() {
     </div>
   );
 }
+export default Calendar;

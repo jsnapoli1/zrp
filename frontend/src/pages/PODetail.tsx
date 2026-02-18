@@ -38,7 +38,7 @@ import {
 } from "../components/ui/select";
 import { api, type PurchaseOrder, type Vendor } from "../lib/api";
 
-export function PODetail() {
+function PODetail() {
   const { id } = useParams<{ id: string }>();
   const [po, setPO] = useState<PurchaseOrder | null>(null);
   const [vendor, setVendor] = useState<Vendor | null>(null);
@@ -518,3 +518,4 @@ export function PODetail() {
     </div>
   );
 }
+export default PODetail;

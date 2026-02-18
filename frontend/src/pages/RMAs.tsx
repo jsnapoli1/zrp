@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { RotateCcw, Plus } from "lucide-react";
 import { api, type RMA } from "../lib/api";
 
-export function RMAs() {
+function RMAs() {
   const navigate = useNavigate();
   const [rmas, setRMAs] = useState<RMA[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,3 +205,4 @@ export function RMAs() {
     </div>
   );
 }
+export default RMAs;

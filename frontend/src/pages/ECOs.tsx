@@ -51,7 +51,7 @@ const statusConfig = {
   rejected: { label: 'Rejected', variant: 'destructive' as const, color: 'text-red-600' },
 };
 
-export function ECOs() {
+function ECOs() {
   const navigate = useNavigate();
   const [ecos, setECOs] = useState<ECO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -361,3 +361,4 @@ export function ECOs() {
     </div>
   );
 }
+export default ECOs;

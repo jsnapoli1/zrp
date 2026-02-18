@@ -37,7 +37,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { api, type InventoryItem } from "../lib/api";
 
-export function Inventory() {
+function Inventory() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showLowStock, setShowLowStock] = useState(false);
@@ -410,3 +410,4 @@ export function Inventory() {
     </div>
   );
 }
+export default Inventory;

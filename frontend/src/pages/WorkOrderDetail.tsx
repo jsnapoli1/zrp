@@ -48,7 +48,7 @@ interface BOMItem {
   status: string;
 }
 
-export function WorkOrderDetail() {
+function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null);
   const [bomData, setBomData] = useState<{
@@ -562,3 +562,4 @@ export function WorkOrderDetail() {
     </div>
   );
 }
+export default WorkOrderDetail;

@@ -37,7 +37,7 @@ interface TestEmailResult {
   timestamp: string;
 }
 
-export function EmailSettings() {
+function EmailSettings() {
   const [config, setConfig] = useState<EmailConfig>({
     enabled: false,
     smtp_host: '',
@@ -476,3 +476,4 @@ export function EmailSettings() {
     </div>
   );
 }
+export default EmailSettings;

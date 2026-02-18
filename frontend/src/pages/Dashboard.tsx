@@ -80,7 +80,7 @@ interface Activity {
   user: string;
 }
 
-export function Dashboard() {
+function Dashboard() {
   const [stats, setStats] = useState<ExtendedDashboardStats | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,3 +238,4 @@ export function Dashboard() {
     </div>
   );
 }
+export default Dashboard;

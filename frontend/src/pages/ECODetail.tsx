@@ -58,7 +58,7 @@ const statusConfig = {
   },
 };
 
-export function ECODetail() {
+function ECODetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [eco, setECO] = useState<ECOWithDetails | null>(null);
@@ -375,3 +375,4 @@ export function ECODetail() {
     </div>
   );
 }
+export default ECODetail;

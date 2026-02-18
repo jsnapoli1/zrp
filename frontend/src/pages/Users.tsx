@@ -72,7 +72,7 @@ const statusConfig = {
   }
 };
 
-export function Users() {
+function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -526,3 +526,4 @@ export function Users() {
     </div>
   );
 }
+export default Users;

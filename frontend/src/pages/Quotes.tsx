@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { FileText, Plus, Trash2 } from "lucide-react";
 import { api, type Quote, type QuoteLine } from "../lib/api";
 
-export function Quotes() {
+function Quotes() {
   const navigate = useNavigate();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -410,3 +410,4 @@ export function Quotes() {
     </div>
   );
 }
+export default Quotes;

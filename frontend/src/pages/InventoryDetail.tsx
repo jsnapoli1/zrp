@@ -40,7 +40,7 @@ import {
 } from "../components/ui/select";
 import { api, type InventoryItem, type InventoryTransaction } from "../lib/api";
 
-export function InventoryDetail() {
+function InventoryDetail() {
   const { ipn } = useParams<{ ipn: string }>();
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
@@ -434,3 +434,4 @@ export function InventoryDetail() {
     </div>
   );
 }
+export default InventoryDetail;

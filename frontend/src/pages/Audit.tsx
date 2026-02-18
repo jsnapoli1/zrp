@@ -40,7 +40,7 @@ const actionColors: Record<string, string> = {
   logout: 'bg-orange-100 text-orange-800',
 };
 
-export function Audit() {
+function Audit() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -395,3 +395,4 @@ export function Audit() {
     </div>
   );
 }
+export default Audit;

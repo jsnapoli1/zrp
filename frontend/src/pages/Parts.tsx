@@ -38,7 +38,7 @@ interface PartWithFields extends Part {
   status?: string;
 }
 
-export function Parts() {
+function Parts() {
   const navigate = useNavigate();
   const [parts, setParts] = useState<Part[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -306,3 +306,4 @@ export function Parts() {
     </div>
   );
 }
+export default Parts;

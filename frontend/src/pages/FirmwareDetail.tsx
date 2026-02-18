@@ -10,7 +10,7 @@ import { Label } from "../components/ui/label";
 import { Cpu, ArrowLeft, Play, Pause, RotateCcw } from "lucide-react";
 import { api, type FirmwareCampaign, type CampaignDevice } from "../lib/api";
 
-export function FirmwareDetail() {
+function FirmwareDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState<FirmwareCampaign | null>(null);
@@ -340,3 +340,4 @@ export function FirmwareDetail() {
     </div>
   );
 }
+export default FirmwareDetail;

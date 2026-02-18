@@ -47,7 +47,7 @@ import {
 } from "../components/ui/select";
 import { api, type Vendor } from "../lib/api";
 
-export function Vendors() {
+function Vendors() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -567,3 +567,4 @@ export function Vendors() {
     </div>
   );
 }
+export default Vendors;
