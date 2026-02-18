@@ -219,6 +219,167 @@ func getPartByIPN(pmDir, ipn string) (map[string]string, error) {
 	return nil, fmt.Errorf("part not found: %s", ipn)
 }
 
+// BOMNode represents a node in the BOM tree
+type BOMNode struct {
+	IPN         string    `json:"ipn"`
+	Description string    `json:"description"`
+	Qty         float64   `json:"qty,omitempty"`
+	Ref         string    `json:"ref,omitempty"`
+	Children    []BOMNode `json:"children"`
+}
+
+func handlePartBOM(w http.ResponseWriter, r *http.Request, ipn string) {
+	// Only works for assembly IPNs
+	upper := strings.ToUpper(ipn)
+	if !strings.HasPrefix(upper, "PCA-") && !strings.HasPrefix(upper, "ASY-") {
+		jsonErr(w, "BOM only available for assembly IPNs (PCA, ASY prefix)", 400)
+		return
+	}
+
+	node, err := buildBOMTree(ipn, 0, 5)
+	if err != nil {
+		jsonErr(w, err.Error(), 404)
+		return
+	}
+	jsonResp(w, node)
+}
+
+func buildBOMTree(ipn string, depth, maxDepth int) (*BOMNode, error) {
+	if depth > maxDepth {
+		return &BOMNode{IPN: ipn, Description: "(max depth reached)", Children: []BOMNode{}}, nil
+	}
+
+	// Look up part description
+	desc := ""
+	fields, _ := getPartByIPN(partsDir, ipn)
+	if fields != nil {
+		for k, v := range fields {
+			if strings.EqualFold(k, "description") || strings.EqualFold(k, "desc") {
+				desc = v
+				break
+			}
+		}
+	}
+
+	node := &BOMNode{IPN: ipn, Description: desc, Children: []BOMNode{}}
+
+	// Try to find BOM CSV: look for <IPN>.csv in partsDir
+	if partsDir == "" {
+		return node, nil
+	}
+
+	// Search for BOM file: try exact IPN.csv, then in subdirectories
+	bomPaths := []string{
+		filepath.Join(partsDir, ipn+".csv"),
+	}
+	// Also check subdirectories
+	entries, _ := os.ReadDir(partsDir)
+	for _, e := range entries {
+		if e.IsDir() {
+			bomPaths = append(bomPaths, filepath.Join(partsDir, e.Name(), ipn+".csv"))
+		}
+	}
+
+	var bomFile string
+	for _, p := range bomPaths {
+		if _, err := os.Stat(p); err == nil {
+			bomFile = p
+			break
+		}
+	}
+
+	if bomFile == "" {
+		return node, nil
+	}
+
+	f, err := os.Open(bomFile)
+	if err != nil {
+		return node, nil
+	}
+	defer f.Close()
+
+	rdr := csv.NewReader(f)
+	rdr.LazyQuotes = true
+	rdr.TrimLeadingSpace = true
+	records, err := rdr.ReadAll()
+	if err != nil || len(records) < 2 {
+		return node, nil
+	}
+
+	headers := records[0]
+	ipnIdx, qtyIdx, refIdx, descIdx := -1, -1, -1, -1
+	for i, h := range headers {
+		hl := strings.ToLower(h)
+		switch {
+		case hl == "ipn" || hl == "part_number" || hl == "pn":
+			ipnIdx = i
+		case hl == "qty" || hl == "quantity":
+			qtyIdx = i
+		case hl == "ref" || hl == "reference" || hl == "designator" || hl == "ref_des":
+			refIdx = i
+		case hl == "description" || hl == "desc":
+			descIdx = i
+		}
+	}
+	if ipnIdx == -1 {
+		ipnIdx = 0
+	}
+
+	for _, row := range records[1:] {
+		if ipnIdx >= len(row) {
+			continue
+		}
+		childIPN := strings.TrimSpace(row[ipnIdx])
+		if childIPN == "" {
+			continue
+		}
+		var qty float64 = 1
+		if qtyIdx >= 0 && qtyIdx < len(row) {
+			if q, err := strconv.ParseFloat(strings.TrimSpace(row[qtyIdx]), 64); err == nil {
+				qty = q
+			}
+		}
+		ref := ""
+		if refIdx >= 0 && refIdx < len(row) {
+			ref = strings.TrimSpace(row[refIdx])
+		}
+		childDesc := ""
+		if descIdx >= 0 && descIdx < len(row) {
+			childDesc = strings.TrimSpace(row[descIdx])
+		}
+
+		childUpper := strings.ToUpper(childIPN)
+		if strings.HasPrefix(childUpper, "PCA-") || strings.HasPrefix(childUpper, "ASY-") {
+			// Recursively expand sub-assemblies
+			childNode, _ := buildBOMTree(childIPN, depth+1, maxDepth)
+			if childNode != nil {
+				childNode.Qty = qty
+				childNode.Ref = ref
+				if childNode.Description == "" {
+					childNode.Description = childDesc
+				}
+				node.Children = append(node.Children, *childNode)
+			}
+		} else {
+			// Leaf part - get description from parts DB if not in BOM
+			if childDesc == "" {
+				childFields, _ := getPartByIPN(partsDir, childIPN)
+				if childFields != nil {
+					for k, v := range childFields {
+						if strings.EqualFold(k, "description") || strings.EqualFold(k, "desc") {
+							childDesc = v
+							break
+						}
+					}
+				}
+			}
+			node.Children = append(node.Children, BOMNode{IPN: childIPN, Description: childDesc, Qty: qty, Ref: ref, Children: []BOMNode{}})
+		}
+	}
+
+	return node, nil
+}
+
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	d := DashboardData{}
 	db.QueryRow("SELECT COUNT(*) FROM ecos WHERE status NOT IN ('implemented','rejected')").Scan(&d.OpenECOs)

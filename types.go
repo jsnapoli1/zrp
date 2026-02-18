@@ -61,6 +61,8 @@ type InventoryItem struct {
 	Location     string  `json:"location"`
 	ReorderPoint float64 `json:"reorder_point"`
 	ReorderQty   float64 `json:"reorder_qty"`
+	Description  string  `json:"description"`
+	MPN          string  `json:"mpn"`
 	UpdatedAt    string  `json:"updated_at"`
 }
 

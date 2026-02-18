@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -71,6 +72,82 @@ func handleUpdatePO(w http.ResponseWriter, r *http.Request, id string) {
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "po", id, "Updated PO "+id)
 	handleGetPO(w, r, id)
+}
+
+func handleGeneratePOFromWO(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		WOID     string `json:"wo_id"`
+		VendorID string `json:"vendor_id"`
+	}
+	if err := decodeBody(r, &body); err != nil || body.WOID == "" {
+		jsonErr(w, "wo_id required", 400)
+		return
+	}
+
+	// Get WO details
+	var assemblyIPN string
+	var qty int
+	err := db.QueryRow("SELECT assembly_ipn, qty FROM work_orders WHERE id=?", body.WOID).Scan(&assemblyIPN, &qty)
+	if err != nil {
+		jsonErr(w, "work order not found", 404)
+		return
+	}
+
+	// Get BOM shortages (same logic as handleWorkOrderBOM)
+	rows, err := db.Query("SELECT ipn, qty_on_hand FROM inventory")
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var lines []POLine
+	for rows.Next() {
+		var ipn string
+		var onHand float64
+		rows.Scan(&ipn, &onHand)
+		qtyRequired := float64(qty)
+		shortage := qtyRequired - onHand
+		if shortage > 0 {
+			var mpn, manufacturer string
+			fields, ferr := getPartByIPN(partsDir, ipn)
+			if ferr == nil {
+				for k, v := range fields {
+					kl := strings.ToLower(k)
+					if kl == "mpn" {
+						mpn = v
+					}
+					if kl == "manufacturer" {
+						manufacturer = v
+					}
+				}
+			}
+			lines = append(lines, POLine{IPN: ipn, MPN: mpn, Manufacturer: manufacturer, QtyOrdered: shortage})
+		}
+	}
+
+	if len(lines) == 0 {
+		jsonErr(w, "no shortages found for this work order", 400)
+		return
+	}
+
+	// Create PO
+	poID := nextID("PO", "purchase_orders", 4)
+	now := time.Now().Format("2006-01-02 15:04:05")
+	_, err = db.Exec("INSERT INTO purchase_orders (id, vendor_id, status, notes, created_at) VALUES (?, ?, 'draft', ?, ?)",
+		poID, body.VendorID, "Auto-generated from "+body.WOID, now)
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+
+	for _, l := range lines {
+		db.Exec("INSERT INTO po_lines (po_id, ipn, mpn, manufacturer, qty_ordered) VALUES (?, ?, ?, ?, ?)",
+			poID, l.IPN, l.MPN, l.Manufacturer, l.QtyOrdered)
+	}
+
+	logAudit(db, getUsername(r), "created", "po", poID, "Auto-generated PO from WO "+body.WOID)
+	jsonResp(w, map[string]interface{}{"po_id": poID, "lines": len(lines)})
 }
 
 func handleReceivePO(w http.ResponseWriter, r *http.Request, id string) {

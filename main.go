@@ -89,6 +89,8 @@ func main() {
 			handleCreatePart(w, r)
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "GET":
 			handleGetPart(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "bom" && r.Method == "GET":
+			handlePartBOM(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdatePart(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "DELETE":
@@ -155,6 +157,8 @@ func main() {
 			handleListPOs(w, r)
 		case parts[0] == "pos" && len(parts) == 1 && r.Method == "POST":
 			handleCreatePO(w, r)
+		case parts[0] == "pos" && len(parts) == 2 && parts[1] == "generate-from-wo" && r.Method == "POST":
+			handleGeneratePOFromWO(w, r)
 		case parts[0] == "pos" && len(parts) == 2 && r.Method == "GET":
 			handleGetPO(w, r, parts[1])
 		case parts[0] == "pos" && len(parts) == 2 && r.Method == "PUT":

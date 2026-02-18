@@ -2,12 +2,13 @@ package main
 
 import (
 	"net/http"
+	"strings"
 	"time"
 )
 
 func handleListInventory(w http.ResponseWriter, r *http.Request) {
 	lowStock := r.URL.Query().Get("low_stock")
-	query := "SELECT ipn,qty_on_hand,qty_reserved,COALESCE(location,''),reorder_point,reorder_qty,updated_at FROM inventory"
+	query := "SELECT ipn,qty_on_hand,qty_reserved,COALESCE(location,''),reorder_point,reorder_qty,COALESCE(description,''),COALESCE(mpn,''),updated_at FROM inventory"
 	if lowStock == "true" {
 		query += " WHERE qty_on_hand <= reorder_point AND reorder_point > 0"
 	}
@@ -18,7 +19,7 @@ func handleListInventory(w http.ResponseWriter, r *http.Request) {
 	var items []InventoryItem
 	for rows.Next() {
 		var i InventoryItem
-		rows.Scan(&i.IPN, &i.QtyOnHand, &i.QtyReserved, &i.Location, &i.ReorderPoint, &i.ReorderQty, &i.UpdatedAt)
+		rows.Scan(&i.IPN, &i.QtyOnHand, &i.QtyReserved, &i.Location, &i.ReorderPoint, &i.ReorderQty, &i.Description, &i.MPN, &i.UpdatedAt)
 		items = append(items, i)
 	}
 	if items == nil { items = []InventoryItem{} }
@@ -27,8 +28,8 @@ func handleListInventory(w http.ResponseWriter, r *http.Request) {
 
 func handleGetInventory(w http.ResponseWriter, r *http.Request, ipn string) {
 	var i InventoryItem
-	err := db.QueryRow("SELECT ipn,qty_on_hand,qty_reserved,COALESCE(location,''),reorder_point,reorder_qty,updated_at FROM inventory WHERE ipn=?", ipn).
-		Scan(&i.IPN, &i.QtyOnHand, &i.QtyReserved, &i.Location, &i.ReorderPoint, &i.ReorderQty, &i.UpdatedAt)
+	err := db.QueryRow("SELECT ipn,qty_on_hand,qty_reserved,COALESCE(location,''),reorder_point,reorder_qty,COALESCE(description,''),COALESCE(mpn,''),updated_at FROM inventory WHERE ipn=?", ipn).
+		Scan(&i.IPN, &i.QtyOnHand, &i.QtyReserved, &i.Location, &i.ReorderPoint, &i.ReorderQty, &i.Description, &i.MPN, &i.UpdatedAt)
 	if err != nil { jsonErr(w, "not found", 404); return }
 	jsonResp(w, i)
 }
@@ -38,8 +39,21 @@ func handleInventoryTransact(w http.ResponseWriter, r *http.Request) {
 	if err := decodeBody(r, &t); err != nil { jsonErr(w, "invalid body", 400); return }
 	now := time.Now().Format("2006-01-02 15:04:05")
 
-	// Ensure inventory record exists
-	db.Exec("INSERT OR IGNORE INTO inventory (ipn) VALUES (?)", t.IPN)
+	// Ensure inventory record exists, enriching with parts DB data
+	var desc, mpn string
+	fields, err2 := getPartByIPN(partsDir, t.IPN)
+	if err2 == nil {
+		for k, v := range fields {
+			kl := strings.ToLower(k)
+			if kl == "description" || kl == "desc" {
+				desc = v
+			}
+			if kl == "mpn" {
+				mpn = v
+			}
+		}
+	}
+	db.Exec("INSERT OR IGNORE INTO inventory (ipn, description, mpn) VALUES (?, ?, ?)", t.IPN, desc, mpn)
 
 	// Insert transaction
 	_, err := db.Exec("INSERT INTO inventory_transactions (ipn,type,qty,reference,notes,created_at) VALUES (?,?,?,?,?,?)",

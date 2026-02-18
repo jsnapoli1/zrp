@@ -50,6 +50,7 @@ func runMigrations() error {
 			ipn TEXT PRIMARY KEY, qty_on_hand REAL DEFAULT 0,
 			qty_reserved REAL DEFAULT 0, location TEXT,
 			reorder_point REAL DEFAULT 0, reorder_qty REAL DEFAULT 0,
+			description TEXT DEFAULT '', mpn TEXT DEFAULT '',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS inventory_transactions (
@@ -162,6 +163,14 @@ func runMigrations() error {
 		if _, err := db.Exec(t); err != nil {
 			return fmt.Errorf("migration error: %w\nSQL: %s", err, t)
 		}
+	}
+	// Add columns to existing tables if missing
+	alterStmts := []string{
+		"ALTER TABLE inventory ADD COLUMN description TEXT DEFAULT ''",
+		"ALTER TABLE inventory ADD COLUMN mpn TEXT DEFAULT ''",
+	}
+	for _, s := range alterStmts {
+		db.Exec(s) // ignore errors (column already exists)
 	}
 	return nil
 }

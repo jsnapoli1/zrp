@@ -6,7 +6,10 @@ window.module_procurement = {
       container.innerHTML = `<div class="card">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-semibold">Purchase Orders</h2>
-          <button class="btn btn-primary" onclick="window._poCreate()">+ New PO</button>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" onclick="window._poFromWO()">🔄 Generate from WO Shortage</button>
+            <button class="btn btn-primary" onclick="window._poCreate()">+ New PO</button>
+          </div>
         </div>
         <table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500">
           <th class="pb-2">PO #</th><th class="pb-2">Vendor</th><th class="pb-2">Status</th><th class="pb-2">Expected</th><th class="pb-2">Created</th>
@@ -22,6 +25,34 @@ window.module_procurement = {
         ${items.length===0?'<p class="text-center text-gray-400 py-4">No purchase orders</p>':''}
       </div>`;
     }
+
+    window._poFromWO = async () => {
+      const [woRes, vRes] = await Promise.all([api('GET', 'workorders'), api('GET', 'vendors')]);
+      const wos = woRes.data || [];
+      const vendors = vRes.data || [];
+      showModal('Generate PO from WO Shortages', `<div class="space-y-3">
+        <div><label class="label">Work Order</label><select class="input" data-field="wo_id">
+          <option value="">Select work order...</option>
+          ${wos.map(w => `<option value="${w.id}">${w.id} — ${w.assembly_ipn} (×${w.qty}) [${w.status}]</option>`).join('')}
+        </select></div>
+        <div><label class="label">Vendor (optional)</label><select class="input" data-field="vendor_id">
+          <option value="">No vendor</option>
+          ${vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('')}
+        </select></div>
+      </div>`, async (o) => {
+        const v = getModalValues(o);
+        if (!v.wo_id) { toast('Select a work order', 'error'); return; }
+        try {
+          const res = await api('POST', 'pos/generate-from-wo', { wo_id: v.wo_id, vendor_id: v.vendor_id });
+          const poId = res.data?.po_id;
+          toast('PO ' + poId + ' created with ' + res.data?.lines + ' lines');
+          o.remove();
+          load();
+          if (poId) setTimeout(() => window._poEdit(poId), 300);
+        } catch(e) { toast(e.message, 'error'); }
+      });
+    };
+
     window._poCreate = async () => {
       const vRes = await api('GET', 'vendors');
       const vendors = vRes.data || [];

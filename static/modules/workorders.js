@@ -48,6 +48,7 @@ window.module_workorders = {
         const lines = bom.bom||[];
         const rowColor = (s) => s==='ok'?'bg-green-50':s==='low'?'bg-yellow-50':'bg-red-50';
         const statusIcon = (s) => s==='ok'?'✅':s==='low'?'⚠️':'❌';
+        const hasShortages = lines.some(l => l.shortage > 0);
         showModal('BOM for '+bom.assembly_ipn+' (×'+bom.qty+')', `<table class="w-full text-sm"><thead><tr class="border-b text-gray-500">
           <th class="pb-1 text-left">IPN</th><th class="pb-1 text-left">Description</th><th class="pb-1 text-right">Required</th><th class="pb-1 text-right">On Hand</th><th class="pb-1 text-right">Shortage</th><th class="pb-1 text-center">Status</th>
         </tr></thead><tbody>
@@ -59,7 +60,15 @@ window.module_workorders = {
             <td class="py-1 text-right font-medium ${l.shortage>0?'text-red-600':''}">${l.shortage}</td>
             <td class="py-1 text-center">${statusIcon(l.status)} ${l.status}</td>
           </tr>`).join('')}
-        </tbody></table>${lines.length===0?'<p class="text-gray-400 text-center py-2">No BOM data</p>':''}`);
+        </tbody></table>${lines.length===0?'<p class="text-gray-400 text-center py-2">No BOM data</p>':''}
+        ${hasShortages?'<button class="btn btn-danger mt-3" id="wo-create-po">🛒 Create PO for Shortages</button>':''}`);
+        document.getElementById('wo-create-po')?.addEventListener('click', async () => {
+          try {
+            const res = await api('POST', 'pos/generate-from-wo', { wo_id: id });
+            toast('PO ' + res.data?.po_id + ' created with ' + res.data?.lines + ' lines');
+            document.querySelector('.modal-overlay')?.remove();
+          } catch(e) { toast(e.message, 'error'); }
+        });
       });
     };
     load();

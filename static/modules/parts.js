@@ -63,7 +63,65 @@ window.module_parts = {
       const res = await api('GET', 'parts/' + ipn);
       const p = res.data;
       const fields = Object.entries(p.fields || {}).map(([k,v]) => `<div class="mb-2"><span class="label">${k}</span><div class="text-sm">${v}</div></div>`).join('');
-      showModal('Part: ' + ipn, `<div class="font-mono text-lg text-blue-600 mb-4">${ipn}</div>${fields}`);
+      const isAssembly = ipn.toUpperCase().startsWith('PCA-') || ipn.toUpperCase().startsWith('ASY-');
+      let bomHTML = '';
+      if (isAssembly) {
+        bomHTML = `<div class="mt-4 border-t pt-4">
+          <div class="flex gap-2 mb-3">
+            <button class="btn btn-secondary btn-sm" id="parts-tab-details" onclick="document.getElementById('parts-details-panel').style.display='block';document.getElementById('parts-bom-panel').style.display='none';">Details</button>
+            <button class="btn btn-secondary btn-sm" id="parts-tab-bom" onclick="window._partsLoadBOM('${ipn}')">📋 BOM</button>
+          </div>
+          <div id="parts-details-panel">${fields}</div>
+          <div id="parts-bom-panel" style="display:none"><p class="text-gray-400 text-center py-2">Loading BOM...</p></div>
+        </div>`;
+      }
+      showModal('Part: ' + ipn, `<div class="font-mono text-lg text-blue-600 mb-4">${ipn}</div>${isAssembly ? bomHTML : fields}`);
+    };
+    window._partsLoadBOM = async (ipn) => {
+      document.getElementById('parts-details-panel').style.display = 'none';
+      const panel = document.getElementById('parts-bom-panel');
+      panel.style.display = 'block';
+      try {
+        const res = await api('GET', 'parts/' + encodeURIComponent(ipn) + '/bom');
+        const tree = res.data;
+        if (!tree || !tree.children || tree.children.length === 0) {
+          panel.innerHTML = '<p class="text-gray-400 text-center py-4">No BOM data found. BOM CSV file not available for this assembly.</p>';
+          return;
+        }
+        let uniqueParts = new Set();
+        let totalLines = 0;
+        function renderTree(node, depth) {
+          let html = '';
+          for (const child of (node.children || [])) {
+            totalLines++;
+            uniqueParts.add(child.ipn);
+            const indent = depth * 24;
+            const isAsm = child.ipn.toUpperCase().startsWith('PCA-') || child.ipn.toUpperCase().startsWith('ASY-');
+            html += `<tr class="border-b border-gray-100 ${isAsm?'bg-blue-50':''}">
+              <td class="py-1" style="padding-left:${indent}px">
+                <span class="font-mono text-blue-600 cursor-pointer hover:underline" onclick="window._partsDetail('${child.ipn}')">${isAsm?'📦 ':''}${child.ipn}</span>
+              </td>
+              <td class="py-1 text-gray-600">${child.description||''}</td>
+              <td class="py-1 text-center">${child.qty||''}</td>
+              <td class="py-1 text-gray-500 text-xs">${child.ref||''}</td>
+            </tr>`;
+            if (child.children && child.children.length > 0) {
+              html += renderTree(child, depth + 1);
+            }
+          }
+          return html;
+        }
+        const rows = renderTree(tree, 0);
+        panel.innerHTML = `<table class="w-full text-sm"><thead><tr class="border-b text-gray-500">
+          <th class="pb-1 text-left">IPN</th><th class="pb-1 text-left">Description</th><th class="pb-1 text-center">Qty</th><th class="pb-1 text-left">Ref Des</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+        <div class="flex gap-4 mt-3 text-sm text-gray-500">
+          <span>📊 ${totalLines} total lines</span>
+          <span>🔧 ${uniqueParts.size} unique parts</span>
+        </div>`;
+      } catch(e) {
+        panel.innerHTML = '<p class="text-red-500 text-center py-4">' + (e.message||'Failed to load BOM') + '</p>';
+      }
     };
     window._partsExport = () => { toast('CSV export: use gitplm CLI for full export'); };
     load();
