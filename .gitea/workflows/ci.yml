@@ -1,0 +1,52 @@
+name: ZRP CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: arch:host
+
+    steps:
+      - name: Checkout
+        run: |
+          git clone https://gitea.zonit.com/jackn/zrp.git zrp
+          cd zrp
+          git checkout ${{ github.sha }}
+
+      - name: Build
+        run: |
+          cd zrp
+          go build ./...
+
+      - name: Go Tests
+        run: |
+          cd zrp
+          go test ./...
+
+      - name: Install Playwright
+        run: |
+          cd zrp
+          npm ci 2>/dev/null || npm install @playwright/test
+          npx playwright install chromium
+
+      - name: Start Server
+        run: |
+          cd zrp
+          # Use a test DB
+          go run . --pmDir ~/Documents/Zonit/zonit-dev/parts/database/ &
+          sleep 4
+          curl -sf http://localhost:9000/api/v1/dashboard || exit 1
+
+      - name: Playwright Tests
+        run: |
+          cd zrp
+          npx playwright test --config=playwright.config.js --reporter=list
+
+      - name: Cleanup
+        if: always()
+        run: pkill -f "go run.*zrp" 2>/dev/null || true
