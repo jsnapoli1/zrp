@@ -1,73 +1,60 @@
-# React + TypeScript + Vite
+# ZRP React Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React frontend for ZRP (Zero Research Platform) built with TypeScript, Vite, and shadcn/ui.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **React 19** with TypeScript
+- **Vite 7** for build tooling
+- **shadcn/ui** for UI components
+- **Tailwind CSS v3** for styling  
+- **React Router** for client-side routing
+- **Lucide React** for icons
 
-## React Compiler
+## Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+# Install dependencies
+npm install
 
-## Expanding the ESLint configuration
+# Start development server (with API proxy)
+npm run dev
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# Build for production
+npm run build
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Preview production build
+npm run preview
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Architecture
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `src/components/ui/` - shadcn/ui components
+- `src/layouts/` - App layout with sidebar navigation
+- `src/pages/` - Page components (one per module)
+- `src/lib/api.ts` - Typed API client for ZRP backend
+- `src/lib/utils.ts` - Utility functions
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## API Integration
+
+The frontend automatically proxies `/api/*` requests to the Go backend on `http://localhost:9000` during development. In production, the Go server serves the React build.
+
+## Module Structure
+
+The app is organized around ZRP's main functional areas:
+
+- **Engineering**: Parts, ECOs, Documents, Testing
+- **Supply Chain**: Vendors, Purchase Orders, Procurement  
+- **Manufacturing**: Work Orders, Inventory, NCRs
+- **Field & Service**: RMAs, Field Reports
+- **Sales**: Quotes, Pricing
+- **Reports**: Analytics, Calendar
+- **Admin**: Users, Settings
+
+## Dark Mode
+
+Dark mode is supported out of the box via shadcn/ui's built-in theme system.
+
+## Next Steps
+
+This is the foundation. Individual module pages can now be built on top of this structure, using the typed API client and shadcn/ui components for consistency.
