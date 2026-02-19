@@ -137,6 +137,17 @@ func handleListParts(w http.ResponseWriter, r *http.Request) {
 		all = filtered
 	}
 
+	// Deduplicate by IPN (keep first occurrence)
+	seen := make(map[string]bool)
+	deduped := make([]Part, 0, len(all))
+	for _, p := range all {
+		if !seen[p.IPN] {
+			seen[p.IPN] = true
+			deduped = append(deduped, p)
+		}
+	}
+	all = deduped
+
 	sort.Slice(all, func(i, j int) bool { return all[i].IPN < all[j].IPN })
 	total := len(all)
 	start := (page - 1) * limit
