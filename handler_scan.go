@@ -24,7 +24,7 @@ func handleScanLookup(w http.ResponseWriter, r *http.Request, code string) {
 	codeLower := strings.ToLower(code)
 
 	// Search parts by IPN
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	for _, parts := range cats {
 		for _, p := range parts {
 			if strings.EqualFold(p.IPN, code) || strings.Contains(strings.ToLower(p.IPN), codeLower) {

@@ -24,3 +24,8 @@ demo/
 *.mp4
 *.webm
 *.db
+
+# E2E test artifacts
+.test-data/
+test-results/
+playwright-report/

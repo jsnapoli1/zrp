@@ -15,17 +15,18 @@ import (
 // gitplm CSV format: first row is headers, IPN is derived from filename/category
 // Category dirs contain CSV files with parts data
 
-func loadPartsFromDir() (map[string][]Part, map[string][]string, error) {
+func loadPartsFromDir() (map[string][]Part, map[string][]string, map[string]string, error) {
 	categories := make(map[string][]Part)
 	schemas := make(map[string][]string)
+	titles := make(map[string]string)
 
 	if partsDir == "" {
-		return categories, schemas, nil
+		return categories, schemas, titles, nil
 	}
 
 	entries, err := os.ReadDir(partsDir)
 	if err != nil {
-		return categories, schemas, err
+		return categories, schemas, titles, err
 	}
 
 	for _, entry := range entries {
@@ -34,7 +35,7 @@ func loadPartsFromDir() (map[string][]Part, map[string][]string, error) {
 			csvFiles, _ := filepath.Glob(filepath.Join(catDir, "*.csv"))
 			catName := strings.ToLower(entry.Name())
 			for _, csvFile := range csvFiles {
-				parts, cols, err := readCSV(csvFile, catName)
+				parts, cols, title, err := readCSV(csvFile, catName)
 				if err != nil {
 					continue
 				}
@@ -42,37 +43,51 @@ func loadPartsFromDir() (map[string][]Part, map[string][]string, error) {
 				if len(cols) > len(schemas[catName]) {
 					schemas[catName] = cols
 				}
+				if title != "" {
+					titles[catName] = title
+				}
 			}
 		} else if strings.HasSuffix(entry.Name(), ".csv") {
 			catName := strings.TrimSuffix(entry.Name(), ".csv")
 			catName = strings.ToLower(catName)
-			parts, cols, err := readCSV(filepath.Join(partsDir, entry.Name()), catName)
+			parts, cols, title, err := readCSV(filepath.Join(partsDir, entry.Name()), catName)
 			if err != nil {
 				continue
 			}
 			categories[catName] = append(categories[catName], parts...)
 			schemas[catName] = cols
+			if title != "" {
+				titles[catName] = title
+			}
 		}
 	}
-	return categories, schemas, nil
+	return categories, schemas, titles, nil
 }
 
-func readCSV(path string, category string) ([]Part, []string, error) {
-	f, err := os.Open(path)
+func readCSV(path string, category string) ([]Part, []string, string, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	defer f.Close()
 
-	r := csv.NewReader(f)
+	// Extract title from comment line if present: # TITLE: <title>
+	title := ""
+	lines := strings.Split(string(content), "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "# TITLE:") {
+		title = strings.TrimSpace(strings.TrimPrefix(lines[0], "# TITLE:"))
+		// Remove the comment line for CSV parsing
+		content = []byte(strings.Join(lines[1:], "\n"))
+	}
+
+	r := csv.NewReader(strings.NewReader(string(content)))
 	r.LazyQuotes = true
 	r.TrimLeadingSpace = true
 	records, err := r.ReadAll()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	if len(records) < 2 {
-		return nil, nil, fmt.Errorf("empty csv")
+	if len(records) < 1 {
+		return nil, nil, "", fmt.Errorf("empty csv")
 	}
 
 	headers := records[0]
@@ -98,11 +113,11 @@ func readCSV(path string, category string) ([]Part, []string, error) {
 			parts = append(parts, Part{IPN: ipn, Fields: fields})
 		}
 	}
-	return parts, headers, nil
+	return parts, headers, title, nil
 }
 
 func handleListParts(w http.ResponseWriter, r *http.Request) {
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	category := r.URL.Query().Get("category")
 	q := strings.ToLower(r.URL.Query().Get("q"))
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
@@ -160,7 +175,7 @@ func handleListParts(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetPart(w http.ResponseWriter, r *http.Request, ipn string) {
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	for _, parts := range cats {
 		for _, p := range parts {
 			if p.IPN == ipn {
@@ -199,7 +214,7 @@ func handleCreatePart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check IPN uniqueness across all categories
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	for _, parts := range cats {
 		for _, p := range parts {
 			if p.IPN == body.IPN {
@@ -306,12 +321,14 @@ func handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create CSV with default headers
+	// Create CSV with title comment on first line, then headers
 	f, err := os.Create(csvPath)
 	if err != nil {
 		jsonErr(w, "failed to create category file", 500)
 		return
 	}
+	// Write title as a special comment line: # TITLE: <title>
+	fmt.Fprintf(f, "# TITLE: %s\n", body.Title)
 	csvWriter := csv.NewWriter(f)
 	csvWriter.Write([]string{"IPN", "description", "manufacturer", "value"})
 	csvWriter.Flush()
@@ -327,7 +344,7 @@ func handleCheckIPN(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "ipn query parameter required", 400)
 		return
 	}
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	exists := false
 	for _, parts := range cats {
 		for _, p := range parts {
@@ -352,12 +369,16 @@ func handleDeletePart(w http.ResponseWriter, r *http.Request, ipn string) {
 }
 
 func handleListCategories(w http.ResponseWriter, r *http.Request) {
-	cats, schemas, _ := loadPartsFromDir()
+	cats, schemas, titles, _ := loadPartsFromDir()
 	var result []Category
 	for name, parts := range cats {
 		cols := schemas[name]
 		if cols == nil { cols = []string{} }
-		result = append(result, Category{ID: name, Name: name, Count: len(parts), Columns: cols})
+		displayName := titles[name]
+		if displayName == "" {
+			displayName = name // Fallback to filename if no title
+		}
+		result = append(result, Category{ID: name, Name: displayName, Count: len(parts), Columns: cols})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	jsonResp(w, result)
@@ -382,7 +403,7 @@ func getPartByIPN(pmDir, ipn string) (map[string]string, error) {
 	if pmDir == "" {
 		return nil, fmt.Errorf("no parts directory configured")
 	}
-	cats, _, err := loadPartsFromDir()
+	cats, _, _, err := loadPartsFromDir()
 	if err != nil {
 		return nil, err
 	}
@@ -668,7 +689,7 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	db.QueryRow("SELECT COUNT(*) FROM devices").Scan(&d.TotalDevices)
 
 	// Count parts from CSV
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	for _, p := range cats { d.TotalParts += len(p) }
 
 	json.NewEncoder(w).Encode(d)

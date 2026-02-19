@@ -22,7 +22,7 @@ func handleGlobalSearch(w http.ResponseWriter, r *http.Request) {
 	total := 0
 
 	// Parts
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	var matchedParts []map[string]string
 	for _, parts := range cats {
 		for _, p := range parts {

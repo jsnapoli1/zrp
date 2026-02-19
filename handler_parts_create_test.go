@@ -52,7 +52,7 @@ func TestCreatePart_Success(t *testing.T) {
 	}
 
 	// Verify it was written to the CSV
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	found := false
 	for _, p := range cats["z-ana"] {
 		if p.IPN == "ANA-002" {

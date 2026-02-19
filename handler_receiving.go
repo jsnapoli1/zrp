@@ -158,7 +158,7 @@ func handleWhereUsed(w http.ResponseWriter, r *http.Request, ipn string) {
 		Ref         string  `json:"ref"`
 	}
 
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 
 	// Collect all assembly IPNs (PCA- or ASY- prefixed parts)
 	var assemblyIPNs []string

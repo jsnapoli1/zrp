@@ -512,7 +512,7 @@ func handleGetMarketPricing(w http.ResponseWriter, r *http.Request, partIPN stri
 
 func getPartMPN(ipn string) string {
 	// Parts are loaded from CSV files on disk
-	cats, _, _ := loadPartsFromDir()
+	cats, _, _, _ := loadPartsFromDir()
 	for _, parts := range cats {
 		for _, p := range parts {
 			if p.IPN == ipn {

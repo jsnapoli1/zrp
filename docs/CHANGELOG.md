@@ -4,7 +4,28 @@ All notable changes to ZRP are documented here. Format follows [Keep a Changelog
 
 ## [Unreleased] - 2026-02-19
 
+### Fixed
+- **Vite dev proxy configuration** — added `/auth` and `/files` proxy rules to `frontend/vite.config.ts` so authentication and file serving work correctly in development mode
+- **Category display name bug** — categories now store and display human-readable titles instead of raw filenames
+  - `handleCreateCategory` writes title as comment (`# TITLE: <title>`) on first line of CSV
+  - `handleListCategories` reads and returns the stored title, falling back to filename if not present
+  - Frontend category list now shows "Test Category" instead of "z-tst"
+  - Updated `readCSV()` and `loadPartsFromDir()` to extract and return category titles
+  - All parts-related handlers and tests updated to handle new return signature
+
 ### Added
+- **Playwright e2e test suite** — comprehensive end-to-end tests with isolated test database and parts directory
+  - Test environment setup: separate test port (9001), temp database, and parts CSV directory
+  - **Authentication tests** (`e2e/auth.spec.ts`): login with valid/invalid credentials, logout flow
+  - **Category tests** (`e2e/categories.spec.ts`): create category, verify human-readable display name (tests the bug fix)
+  - **Parts tests** (`e2e/parts.spec.ts`): create category, add part, view parts list, search for parts
+  - **Dashboard tests** (`e2e/dashboard.spec.ts`): verify dashboard loads without errors, displays metrics
+  - Playwright config with global setup script for test data isolation
+  - New npm scripts: `test:e2e`, `test:e2e:ui`, `test:e2e:headed`
+  - Tests run with single worker to avoid database conflicts
+  - Playwright browsers (Chromium) configured for headless testing
+
+### Technical Details
 - **Authentication handler test coverage** — comprehensive test suite for handler_auth.go covering login, logout, session management, password changes, rate limiting, and security features
   - 19 test cases covering all authentication endpoints
   - Tests for login success, invalid credentials, inactive users, rate limiting (per-IP), expired sessions
