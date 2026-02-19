@@ -14,10 +14,16 @@ const testData: TestRow[] = [
   { id: "2", name: "Beta", value: 20, extra: "y" },
 ];
 
+const sortTestData: TestRow[] = [
+  { id: "1", name: "Charlie", value: 30, extra: "a" },
+  { id: "2", name: "Alpha", value: 10, extra: "c" },
+  { id: "3", name: "Beta", value: 20, extra: "b" },
+];
+
 const testColumns: ColumnDef<TestRow>[] = [
-  { id: "name", label: "Name", accessor: (r) => r.name },
-  { id: "value", label: "Value", accessor: (r) => r.value },
-  { id: "extra", label: "Extra", accessor: (r) => r.extra, defaultVisible: false },
+  { id: "name", label: "Name", accessor: (r) => r.name, sortValue: (r) => r.name },
+  { id: "value", label: "Value", accessor: (r) => r.value, sortValue: (r) => r.value },
+  { id: "extra", label: "Extra", accessor: (r) => r.extra, defaultVisible: false, sortValue: (r) => r.extra },
 ];
 
 beforeEach(() => {
@@ -156,5 +162,124 @@ describe("ConfigurableTable", () => {
     expect(screen.getByText("Check")).toBeInTheDocument();
     expect(screen.getByTestId("check-1")).toBeInTheDocument();
     expect(screen.getByTestId("check-2")).toBeInTheDocument();
+  });
+
+  describe("sorting", () => {
+    function getCellTexts(column: number): string[] {
+      const rows = screen.getAllByRole("row").slice(1); // skip header
+      return rows.map((row) => {
+        const cells = row.querySelectorAll("td");
+        return cells[column]?.textContent || "";
+      });
+    }
+
+    it("sorts ascending on first click of column header", () => {
+      render(
+        <ConfigurableTable
+          tableName="sort-test"
+          columns={testColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      fireEvent.click(screen.getByText("Name"));
+      expect(getCellTexts(0)).toEqual(["Alpha", "Beta", "Charlie"]);
+    });
+
+    it("sorts descending on second click", () => {
+      render(
+        <ConfigurableTable
+          tableName="sort-test2"
+          columns={testColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      fireEvent.click(screen.getByText("Name"));
+      fireEvent.click(screen.getByText("Name"));
+      expect(getCellTexts(0)).toEqual(["Charlie", "Beta", "Alpha"]);
+    });
+
+    it("clears sort on third click (back to original order)", () => {
+      render(
+        <ConfigurableTable
+          tableName="sort-test3"
+          columns={testColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      fireEvent.click(screen.getByText("Name"));
+      fireEvent.click(screen.getByText("Name"));
+      fireEvent.click(screen.getByText("Name"));
+      // Original order: Charlie, Alpha, Beta
+      expect(getCellTexts(0)).toEqual(["Charlie", "Alpha", "Beta"]);
+    });
+
+    it("sorts numeric values correctly", () => {
+      render(
+        <ConfigurableTable
+          tableName="sort-num"
+          columns={testColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      fireEvent.click(screen.getByText("Value"));
+      expect(getCellTexts(1)).toEqual(["10", "20", "30"]);
+    });
+
+    it("shows sort direction indicator", () => {
+      const { container } = render(
+        <ConfigurableTable
+          tableName="sort-ind"
+          columns={testColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      // No indicator initially
+      expect(container.querySelector(".lucide-arrow-up-narrow-wide")).toBeNull();
+      expect(container.querySelector(".lucide-arrow-down-wide-narrow")).toBeNull();
+
+      fireEvent.click(screen.getByText("Name"));
+      expect(container.querySelector(".lucide-arrow-up-narrow-wide")).toBeTruthy();
+
+      fireEvent.click(screen.getByText("Name"));
+      expect(container.querySelector(".lucide-arrow-down-wide-narrow")).toBeTruthy();
+    });
+
+    it("switching sort column resets to ascending on new column", () => {
+      render(
+        <ConfigurableTable
+          tableName="sort-switch"
+          columns={testColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      fireEvent.click(screen.getByText("Name"));
+      fireEvent.click(screen.getByText("Name")); // desc on Name
+      fireEvent.click(screen.getByText("Value")); // asc on Value
+      expect(getCellTexts(1)).toEqual(["10", "20", "30"]);
+    });
+
+    it("does not sort columns without sortValue", () => {
+      const noSortColumns: ColumnDef<TestRow>[] = [
+        { id: "name", label: "Name", accessor: (r) => r.name },
+        { id: "value", label: "Value", accessor: (r) => r.value, sortValue: (r) => r.value },
+      ];
+      render(
+        <ConfigurableTable
+          tableName="no-sort"
+          columns={noSortColumns}
+          data={sortTestData}
+          rowKey={(r) => r.id}
+        />
+      );
+      // Click Name header - should not sort (no sortValue)
+      fireEvent.click(screen.getByText("Name"));
+      expect(getCellTexts(0)).toEqual(["Charlie", "Alpha", "Beta"]);
+    });
   });
 });

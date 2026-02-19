@@ -436,6 +436,18 @@ func runMigrations() error {
 			UNIQUE(part_ipn, distributor)
 		)`,
 	}
+	tables = append(tables, `CREATE TABLE IF NOT EXISTS part_changes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		part_ipn TEXT NOT NULL,
+		eco_id TEXT DEFAULT '',
+		field_name TEXT NOT NULL,
+		old_value TEXT DEFAULT '',
+		new_value TEXT DEFAULT '',
+		status TEXT DEFAULT 'draft',
+		created_by TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+
 	for _, t := range tables {
 		if _, err := db.Exec(t); err != nil {
 			return fmt.Errorf("migration error: %w\nSQL: %s", err, t)

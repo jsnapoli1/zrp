@@ -2,6 +2,11 @@
 
 All notable changes to ZRP are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.2] - 2026-02-18
+
+### Added
+- **Sortable table columns** — click column headers to sort ascending/descending/none (3-click cycle) with sort direction indicators; implemented as a reusable feature in ConfigurableTable so all modules benefit (#2)
+
 ## [0.5.1] - 2026-02-18
 
 ### Added

@@ -229,24 +229,28 @@ function Parts() {
       id: "ipn",
       label: "IPN",
       accessor: (part) => <span className="font-mono font-medium">{part.ipn}</span>,
+      sortValue: (part) => part.ipn,
       defaultVisible: true,
     },
     {
       id: "category",
       label: "Category",
       accessor: (part) => <Badge variant="secondary" className="capitalize">{part.category}</Badge>,
+      sortValue: (part) => part.category || "",
       defaultVisible: true,
     },
     {
       id: "description",
       label: "Description",
       accessor: (part) => <span className="max-w-xs truncate block">{part.description || "No description"}</span>,
+      sortValue: (part) => part.description || "",
       defaultVisible: true,
     },
     {
       id: "cost",
       label: "Cost",
       accessor: (part) => part.cost ? `$${part.cost.toFixed(2)}` : "—",
+      sortValue: (part) => part.cost || 0,
       className: "text-right",
       headerClassName: "text-right",
       defaultVisible: true,
@@ -255,6 +259,7 @@ function Parts() {
       id: "stock",
       label: "Stock",
       accessor: (part) => part.stock !== undefined ? part.stock.toString() : "—",
+      sortValue: (part) => part.stock ?? 0,
       className: "text-right",
       headerClassName: "text-right",
       defaultVisible: true,
@@ -267,6 +272,7 @@ function Parts() {
           {part.status || "active"}
         </Badge>
       ),
+      sortValue: (part) => part.status || "active",
       defaultVisible: true,
     },
     ...(gitplmConfigured ? [{

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -16,7 +16,7 @@ import {
   DropdownMenuLabel,
 } from "./ui/dropdown-menu";
 import { Button } from "./ui/button";
-import { Settings2, ArrowUp, ArrowDown, RotateCcw } from "lucide-react";
+import { Settings2, ArrowUp, ArrowDown, RotateCcw, ArrowUpNarrowWide, ArrowDownWideNarrow } from "lucide-react";
 
 export interface ColumnDef<T> {
   id: string;
@@ -27,6 +27,8 @@ export interface ColumnDef<T> {
   headerClassName?: string;
   minWidth?: number;
   defaultWidth?: number;
+  /** Provide a sort value extractor to enable sorting on this column */
+  sortValue?: (row: T) => string | number;
 }
 
 interface ColumnState {
@@ -148,6 +150,33 @@ export function ConfigurableTable<T>({
     setColumnOrder(defaultState);
   };
 
+  // Sorting state: cycles none → asc → desc → none
+  const [sortState, setSortState] = useState<{ colId: string; direction: "asc" | "desc" } | null>(null);
+
+  const handleSort = useCallback((colId: string) => {
+    const col = colMap.get(colId);
+    if (!col?.sortValue) return;
+    setSortState((prev) => {
+      if (!prev || prev.colId !== colId) return { colId, direction: "asc" };
+      if (prev.direction === "asc") return { colId, direction: "desc" };
+      return null;
+    });
+  }, [colMap]);
+
+  const sortedData = useMemo(() => {
+    if (!sortState) return data;
+    const col = colMap.get(sortState.colId);
+    if (!col?.sortValue) return data;
+    const getValue = col.sortValue;
+    const mult = sortState.direction === "asc" ? 1 : -1;
+    return [...data].sort((a, b) => {
+      const va = getValue(a);
+      const vb = getValue(b);
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * mult;
+      return String(va).localeCompare(String(vb)) * mult;
+    });
+  }, [data, sortState, colMap]);
+
   // Column resize
   const resizingRef = useRef<{
     colId: string;
@@ -206,8 +235,17 @@ export function ConfigurableTable<T>({
                 className={col.headerClassName}
                 style={col.width ? { width: col.width, minWidth: col.minWidth || 50 } : { minWidth: col.minWidth || 50 }}
               >
-                <div className="flex items-center gap-1 relative pr-2">
+                <div
+                  className={`flex items-center gap-1 relative pr-2${col.sortValue ? " cursor-pointer select-none" : ""}`}
+                  onClick={() => handleSort(col.id)}
+                >
                   <span>{col.label}</span>
+                  {sortState?.colId === col.id && sortState.direction === "asc" && (
+                    <ArrowUpNarrowWide className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                  {sortState?.colId === col.id && sortState.direction === "desc" && (
+                    <ArrowDownWideNarrow className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
                   {/* Resize handle */}
                   <div
                     className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30"
@@ -284,7 +322,7 @@ export function ConfigurableTable<T>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.length === 0 ? (
+          {sortedData.length === 0 ? (
             <TableRow>
               <TableCell
                 colSpan={visibleColumns.length + (leadingColumn ? 2 : 1)}
@@ -294,7 +332,7 @@ export function ConfigurableTable<T>({
               </TableCell>
             </TableRow>
           ) : (
-            data.map((row) => (
+            sortedData.map((row) => (
               <TableRow
                 key={rowKey(row)}
                 className={`${onRowClick ? "cursor-pointer hover:bg-muted/50" : ""} ${rowClassName?.(row) || ""}`}

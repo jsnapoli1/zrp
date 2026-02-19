@@ -150,10 +150,22 @@ func main() {
 			handlePartCost(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "where-used" && r.Method == "GET":
 			handleWhereUsed(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "changes" && r.Method == "POST":
+			handleCreatePartChanges(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "changes" && r.Method == "GET":
+			handleListPartChanges(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 4 && parts[2] == "changes" && parts[3] == "create-eco" && r.Method == "POST":
+			handleCreateECOFromChanges(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 4 && parts[2] == "changes" && r.Method == "DELETE":
+			handleDeletePartChange(w, r, parts[1], parts[3])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdatePart(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "DELETE":
 			handleDeletePart(w, r, parts[1])
+
+		// Part Changes (all)
+		case parts[0] == "part-changes" && len(parts) == 1 && r.Method == "GET":
+			handleListAllPartChanges(w, r)
 
 		// Categories
 		case parts[0] == "categories" && len(parts) == 1 && r.Method == "GET":
@@ -182,6 +194,8 @@ func main() {
 			handleApproveECO(w, r, parts[1])
 		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "implement" && r.Method == "POST":
 			handleImplementECO(w, r, parts[1])
+		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "part-changes" && r.Method == "GET":
+			handleListECOPartChanges(w, r, parts[1])
 		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "revisions" && r.Method == "GET":
 			handleListECORevisions(w, r, parts[1])
 		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "revisions" && r.Method == "POST":
