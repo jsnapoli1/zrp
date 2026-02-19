@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, waitFor } from "../test/test-utils";
 import { AppLayout } from "./AppLayout";
 
@@ -150,7 +150,7 @@ describe("AppLayout", () => {
   it("toggles dark mode on button click", () => {
     render(<AppLayout />);
     // Find the dark mode toggle button near v1.0.0
-    const buttons = screen.getAllByRole("button");
+    screen.getAllByRole("button");
     // The dark mode toggle is one of the buttons - click it and verify no crash
     const footer = screen.getByText("v1.0.0");
     const toggleBtn = footer.parentElement?.querySelector("button");

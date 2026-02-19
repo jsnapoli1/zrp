@@ -2,6 +2,15 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
+// Mock the WebSocket hook globally so WebSocketProvider works in tests
+vi.mock("../hooks/useWebSocket", () => ({
+  useWebSocket: () => ({
+    status: "connected" as const,
+    lastEvent: null,
+    subscribe: () => () => {},
+  }),
+}));
+
 afterEach(() => {
   cleanup();
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "../test/test-utils";
+import { render, screen, waitFor } from "../test/test-utils";
 import userEvent from "@testing-library/user-event";
 import { mockVendors, mockPOs } from "../test/mocks";
 

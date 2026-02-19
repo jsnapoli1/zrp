@@ -278,8 +278,7 @@ describe("Quotes", () => {
     let ipnInputs = screen.getAllByPlaceholderText("Part number");
     expect(ipnInputs.length).toBe(2);
     // Click the first trash button to remove a line
-    const { container } = render(<div />); // just need the buttons
-    const trashButtons = screen.getAllByRole("button").filter(btn => btn.querySelector("svg.lucide-trash-2") || btn.innerHTML.includes("Trash2"));
+    screen.getAllByRole("button").filter(btn => btn.querySelector("svg.lucide-trash-2") || btn.innerHTML.includes("Trash2"));
     // Use a more reliable approach: find buttons with Trash2 icon
     const removeButtons = screen.getAllByRole("button").filter(b => {
       const svg = b.querySelector("svg");

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { WebSocketProvider } from "../contexts/WebSocketContext";
 import type { FirmwareCampaign, CampaignDevice } from "../lib/api";
 
 const mockNavigate = vi.fn();
@@ -74,9 +75,11 @@ const mockDevices: CampaignDevice[] = [
 function renderWithRoute(id = "FW-001") {
   return render(
     <MemoryRouter initialEntries={[`/firmware/${id}`]}>
-      <Routes>
-        <Route path="/firmware/:id" element={<FirmwareDetail />} />
-      </Routes>
+      <WebSocketProvider>
+        <Routes>
+          <Route path="/firmware/:id" element={<FirmwareDetail />} />
+        </Routes>
+      </WebSocketProvider>
     </MemoryRouter>
   );
 }
@@ -399,16 +402,12 @@ describe("FirmwareDetail", () => {
   });
 
   // Bug 3: Polling uses ref, so it polls when status is running
-  it("polls for updates when campaign is running", async () => {
+  it("uses WebSocket subscription for real-time updates", async () => {
     renderWithRoute();
     await waitFor(() => screen.getByText("Security Update Q1"));
-    // Initial fetch: 1 call each
+    // Initial fetch only — no polling; updates come via WebSocket subscription
     expect(mockGetFirmwareCampaign).toHaveBeenCalledTimes(1);
-    // Advance 5 seconds to trigger poll
-    await vi.advanceTimersByTimeAsync(5000);
-    await waitFor(() => {
-      expect(mockGetFirmwareCampaign).toHaveBeenCalledTimes(2);
-    });
+    expect(mockGetCampaignDevices).toHaveBeenCalledTimes(1);
   });
 
   it("does not poll when campaign is not running", async () => {
@@ -417,8 +416,7 @@ describe("FirmwareDetail", () => {
     renderWithRoute("FW-002");
     await waitFor(() => screen.getByText("Completed Update"));
     const callCount = mockGetFirmwareCampaign.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(5000);
-    // Should not have made additional calls
+    // No polling — WebSocket handles updates; no additional calls after initial load
     expect(mockGetFirmwareCampaign).toHaveBeenCalledTimes(callCount);
   });
 });

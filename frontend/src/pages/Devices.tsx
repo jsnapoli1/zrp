@@ -177,7 +177,7 @@ function Devices() {
                       </p>
                     </div>
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={resetImportDialog}>
+                      <Button variant="outline" onClick={() => resetImportDialog()}>
                         Cancel
                       </Button>
                       <Button onClick={handleImport} disabled={!importFile}>
@@ -207,7 +207,7 @@ function Devices() {
                       )}
                     </div>
                     <div className="flex justify-end">
-                      <Button onClick={resetImportDialog}>Close</Button>
+                      <Button onClick={() => resetImportDialog()}>Close</Button>
                     </div>
                   </>
                 )}

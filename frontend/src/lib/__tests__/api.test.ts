@@ -50,10 +50,12 @@ describe("ApiClient", () => {
     it("throws on non-ok response", async () => {
       mockFetch.mockResolvedValue({
         ok: false,
+        status: 404,
         statusText: "Not Found",
+        json: () => Promise.reject(new Error("no body")),
       });
 
-      await expect(api.getDashboard()).rejects.toThrow("API error: Not Found");
+      await expect(api.getDashboard()).rejects.toThrow("Not Found");
     });
 
     it("parses JSON response", async () => {

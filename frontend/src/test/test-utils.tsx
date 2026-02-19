@@ -1,9 +1,14 @@
 import React from "react";
 import { render, type RenderOptions } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
+import { WebSocketProvider } from "../contexts/WebSocketContext";
 
 function AllProviders({ children }: { children: React.ReactNode }) {
-  return <BrowserRouter>{children}</BrowserRouter>;
+  return (
+    <BrowserRouter>
+      <WebSocketProvider>{children}</WebSocketProvider>
+    </BrowserRouter>
+  );
 }
 
 const customRender = (

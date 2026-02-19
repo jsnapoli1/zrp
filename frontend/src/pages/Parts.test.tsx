@@ -227,8 +227,6 @@ describe("Parts", () => {
   });
 
   it("navigates to part detail on row click", async () => {
-    const mockNavigate = vi.fn();
-    const { useNavigate } = await import("react-router-dom");
     // We can test by checking that clicking a row triggers navigation
     render(<Parts />);
     await waitForLoad();
@@ -326,9 +324,7 @@ describe("Parts", () => {
     fireEvent.click(screen.getByText("Next"));
     await waitFor(() => expect(mockGetParts).toHaveBeenCalledWith(expect.objectContaining({ page: 2 })));
     mockGetParts.mockClear();
-    // Click reset (the RotateCcw button)
-    const resetButton = screen.getByRole("button", { name: "" });
-    // Find reset button - it's the outline button with no text
+    // Find reset button - it's the outline button with RotateCcw icon
     const buttons = screen.getAllByRole("button");
     const resetBtn = buttons.find(b => b.querySelector('svg.lucide-rotate-ccw') || b.querySelector('[class*="rotate"]'));
     if (resetBtn) fireEvent.click(resetBtn);

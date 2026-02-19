@@ -176,7 +176,7 @@ describe("Documents", () => {
   it("shows loading skeletons", () => {
     render(<Documents />);
     // During loading, skeletons should be present
-    const skeletons = document.querySelectorAll('[class*="skeleton"], [class*="Skeleton"]');
+    document.querySelectorAll('[class*="skeleton"], [class*="Skeleton"]');
     // The component uses Skeleton components during loading
     expect(screen.getByText("Document Library")).toBeInTheDocument();
   });

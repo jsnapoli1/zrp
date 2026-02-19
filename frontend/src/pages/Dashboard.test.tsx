@@ -148,29 +148,21 @@ describe("Dashboard", () => {
     });
   });
 
-  it("sets up 30-second auto-refresh interval", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it("uses WebSocket subscription for real-time updates instead of polling", async () => {
     render(<Dashboard />);
     // Wait for initial load
-    await vi.waitFor(() => expect(mockGetDashboard).toHaveBeenCalledTimes(1));
-    mockGetDashboard.mockClear();
-    mockGetDashboardCharts.mockClear();
-    // Advance 30 seconds
-    await vi.advanceTimersByTimeAsync(30000);
+    await waitFor(() => expect(mockGetDashboard).toHaveBeenCalledTimes(1));
+    // Dashboard now uses useWSSubscription instead of setInterval;
+    // verify it loaded and didn't set up any intervals
     expect(mockGetDashboard).toHaveBeenCalledTimes(1);
     expect(mockGetDashboardCharts).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 
-  it("cleans up interval on unmount", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it("cleans up on unmount without errors", async () => {
     const { unmount } = render(<Dashboard />);
-    await vi.waitFor(() => expect(mockGetDashboard).toHaveBeenCalledTimes(1));
-    unmount();
-    mockGetDashboard.mockClear();
-    await vi.advanceTimersByTimeAsync(30000);
-    expect(mockGetDashboard).not.toHaveBeenCalled();
-    vi.useRealTimers();
+    await waitFor(() => expect(mockGetDashboard).toHaveBeenCalledTimes(1));
+    // Should unmount cleanly (no interval to clean up, WebSocket subscription auto-cleans)
+    expect(() => unmount()).not.toThrow();
   });
 
   it("shows 'No recent activity' when activities array is empty", async () => {

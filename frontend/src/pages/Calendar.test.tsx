@@ -95,11 +95,10 @@ describe("Calendar", () => {
       expect(screen.getByText(`${months[now.getMonth()]} ${year}`)).toBeInTheDocument();
     });
     // Find the next button (second navigation button)
-    const navButtons = screen.getAllByRole("button").filter(btn => btn.textContent === "");
+    screen.getAllByRole("button").filter(btn => btn.textContent === "");
     // Click next (the second chevron button)
     const buttons = screen.getAllByRole("button");
     // The next month button is the one after prev
-    let nextBtn: HTMLElement | null = null;
     for (const btn of buttons) {
       if (btn.querySelector('[class*="lucide"]') || btn.innerHTML.includes("chevron")) {
         // collect navigation buttons
@@ -113,7 +112,7 @@ describe("Calendar", () => {
     }
     
     const nextMonth = new Date(year, now.getMonth() + 1, 1);
-    const expectedMonth = months[nextMonth.getMonth()];
+    months[nextMonth.getMonth()];
     const expectedYear = nextMonth.getFullYear();
     await waitFor(() => {
       expect(mockGetCalendarEvents).toHaveBeenCalledWith(expectedYear, nextMonth.getMonth() + 1);

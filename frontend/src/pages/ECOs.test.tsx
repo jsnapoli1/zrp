@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "../test/test-utils";
+import { render, screen, waitFor, fireEvent } from "../test/test-utils";
 import { mockECOs } from "../test/mocks";
 
 const mockNavigate = vi.fn();

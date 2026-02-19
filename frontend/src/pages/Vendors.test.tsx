@@ -168,7 +168,7 @@ describe("Vendors", () => {
       expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     });
     // Click the first dropdown trigger (MoreHorizontal button)
-    const moreButtons = screen.getAllByRole("button").filter(
+    screen.getAllByRole("button").filter(
       btn => btn.querySelector("svg") && btn.textContent === ""
     );
     // Find the dropdown triggers - they're the ghost buttons in the last column

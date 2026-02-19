@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type APIKey as ApiAPIKey } from "../lib/api";
+import { api } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -67,17 +67,7 @@ function APIKeys() {
   };
 
   // Generate random API key
-  const generateApiKey = (): string => {
-    const prefix = 'zrp_';
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = prefix;
-    for (let i = 0; i < 32; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  };
-
-  useEffect(() => {
+    useEffect(() => {
     const fetchAPIKeys = async () => {
       try {
         setLoading(true);
