@@ -16,6 +16,7 @@ const mockGetECO = vi.fn();
 const mockApproveECO = vi.fn();
 const mockImplementECO = vi.fn();
 const mockRejectECO = vi.fn();
+const mockGetECORevisions = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -23,6 +24,7 @@ vi.mock("../lib/api", () => ({
     approveECO: (...args: any[]) => mockApproveECO(...args),
     implementECO: (...args: any[]) => mockImplementECO(...args),
     rejectECO: (...args: any[]) => mockRejectECO(...args),
+    getECORevisions: (...args: any[]) => mockGetECORevisions(...args),
   },
 }));
 
@@ -66,12 +68,61 @@ const mockECORejected = {
   affected_parts: [],
 };
 
+const mockRevisions = [
+  {
+    id: 1,
+    eco_id: "ECO-001",
+    revision: "A",
+    status: "created",
+    changes_summary: "Initial revision",
+    created_by: "engineer",
+    created_at: "2024-01-10",
+    approved_by: null,
+    approved_at: null,
+    implemented_by: null,
+    implemented_at: null,
+    effectivity_date: null,
+    notes: "",
+  },
+  {
+    id: 2,
+    eco_id: "ECO-001",
+    revision: "B",
+    status: "approved",
+    changes_summary: "Updated BOM quantities",
+    created_by: "engineer",
+    created_at: "2024-01-12",
+    approved_by: "manager",
+    approved_at: "2024-01-13",
+    implemented_by: null,
+    implemented_at: null,
+    effectivity_date: "2024-02-01",
+    notes: "Critical update",
+  },
+  {
+    id: 3,
+    eco_id: "ECO-001",
+    revision: "C",
+    status: "implemented",
+    changes_summary: "Final implementation",
+    created_by: "engineer",
+    created_at: "2024-01-15",
+    approved_by: "manager",
+    approved_at: "2024-01-16",
+    implemented_by: "tech",
+    implemented_at: "2024-01-17",
+    effectivity_date: null,
+    notes: "",
+  },
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetECO.mockResolvedValue(mockECODraft);
   mockApproveECO.mockResolvedValue({ ...mockECOOpen, status: "approved" });
   mockImplementECO.mockResolvedValue({ ...mockECOApproved, status: "implemented" });
   mockRejectECO.mockResolvedValue({ ...mockECODraft, status: "rejected" });
+  mockGetECORevisions.mockResolvedValue(mockRevisions);
 });
 
 describe("ECODetail", () => {
@@ -185,7 +236,7 @@ describe("ECODetail", () => {
       // "Approved" appears as badge and in description
       expect(screen.getAllByText("Approved").length).toBeGreaterThanOrEqual(1);
     });
-    expect(screen.getByText(/manager/)).toBeInTheDocument();
+    expect(screen.getAllByText(/manager/).length).toBeGreaterThanOrEqual(1);
   });
 
   // Status actions
@@ -382,5 +433,70 @@ describe("ECODetail", () => {
       expect(screen.getByText("ECO-001")).toBeInTheDocument();
     });
     expect(screen.queryByText(/Priority/i)).not.toBeInTheDocument();
+  });
+
+  // --- Revision Timeline Tests ---
+
+  it("renders revision history section", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Revision History")).toBeInTheDocument();
+    });
+  });
+
+  it("renders all revision entries", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Rev A")).toBeInTheDocument();
+      expect(screen.getByText("Rev B")).toBeInTheDocument();
+      expect(screen.getByText("Rev C")).toBeInTheDocument();
+    });
+  });
+
+  it("renders revision changes summary", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Initial revision")).toBeInTheDocument();
+      expect(screen.getByText("Updated BOM quantities")).toBeInTheDocument();
+      expect(screen.getByText("Final implementation")).toBeInTheDocument();
+    });
+  });
+
+  it("renders revision status badges", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText("created")).toBeInTheDocument();
+      expect(screen.getByText("approved")).toBeInTheDocument();
+      expect(screen.getByText("implemented")).toBeInTheDocument();
+    });
+  });
+
+  it("renders effectivity date when present", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText(/Effective.*2024-02-01/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders approved by info for approved revisions", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getAllByText(/Approved by manager/).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("renders implemented by info for implemented revisions", async () => {
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText(/Implemented by tech/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows no revisions message when empty", async () => {
+    mockGetECORevisions.mockResolvedValue([]);
+    render(<ECODetail />);
+    await waitFor(() => {
+      expect(screen.getByText("No revisions recorded yet")).toBeInTheDocument();
+    });
   });
 });

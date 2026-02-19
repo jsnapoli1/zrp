@@ -50,12 +50,14 @@ const mockCost = {
 const mockGetPart = vi.fn();
 const mockGetPartBOM = vi.fn();
 const mockGetPartCost = vi.fn();
+const mockGetPartWhereUsed = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
     getPart: (...args: any[]) => mockGetPart(...args),
     getPartBOM: (...args: any[]) => mockGetPartBOM(...args),
     getPartCost: (...args: any[]) => mockGetPartCost(...args),
+    getPartWhereUsed: (...args: any[]) => mockGetPartWhereUsed(...args),
   },
 }));
 
@@ -67,6 +69,7 @@ beforeEach(() => {
   mockGetPart.mockResolvedValue(mockPart);
   mockGetPartBOM.mockResolvedValue(mockBOM);
   mockGetPartCost.mockResolvedValue(mockCost);
+  mockGetPartWhereUsed.mockResolvedValue([]);
 });
 
 const waitForLoad = () => waitFor(() => expect(screen.getByText("Part Details")).toBeInTheDocument());
@@ -381,6 +384,59 @@ describe("PartDetail - BOM (assembly IPN)", () => {
     await waitForAssembly();
     await waitFor(() => {
       expect(screen.getByText("No BOM data available for this assembly")).toBeInTheDocument();
+    });
+  });
+
+  // --- Where-Used Tests ---
+
+  it("renders where-used table with parent assemblies", async () => {
+    mockGetPartWhereUsed.mockResolvedValue([
+      { assembly_ipn: "PCA-100", description: "Main Board", qty: 4, ref: "R1-R4" },
+      { assembly_ipn: "ASY-200", description: "Power Supply", qty: 2, ref: "R5-R6" },
+    ]);
+    render(<PartDetail />);
+    await waitForLoad();
+    await waitFor(() => {
+      expect(screen.getAllByText("PCA-100").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("Main Board").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("ASY-200").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("Power Supply").length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("renders where-used qty and ref designators", async () => {
+    mockGetPartWhereUsed.mockResolvedValue([
+      { assembly_ipn: "PCA-100", description: "Main Board", qty: 4, ref: "R1-R4" },
+    ]);
+    render(<PartDetail />);
+    await waitForLoad();
+    await waitFor(() => {
+      expect(screen.getAllByText("4").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("R1-R4").length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("shows empty state when no where-used entries", async () => {
+    mockGetPartWhereUsed.mockResolvedValue([]);
+    render(<PartDetail />);
+    await waitForLoad();
+    await waitFor(() => {
+      expect(screen.getByText("Where Used")).toBeInTheDocument();
+    });
+    // Should show the "not used in any assemblies" message
+    expect(screen.getByText(/not used in any/i)).toBeInTheDocument();
+  });
+
+  it("where-used assembly links navigate to part detail", async () => {
+    mockGetPartWhereUsed.mockResolvedValue([
+      { assembly_ipn: "PCA-100", description: "Main Board", qty: 4, ref: "R1-R4" },
+    ]);
+    render(<PartDetail />);
+    await waitForLoad();
+    await waitFor(() => {
+      const links = screen.getAllByText("PCA-100");
+      const linkEl = links.find(el => el.closest("a"));
+      expect(linkEl?.closest("a")).toHaveAttribute("href", "/parts/PCA-100");
     });
   });
 });
