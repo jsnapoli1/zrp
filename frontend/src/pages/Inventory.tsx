@@ -5,7 +5,8 @@ import {
   AlertTriangle, 
   Plus, 
   MoreHorizontal,
-  Trash2
+  Trash2,
+  ScanLine
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -30,6 +31,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { api, type InventoryItem } from "../lib/api";
 import { ConfigurableTable, type ColumnDef } from "../components/ConfigurableTable";
+import { BarcodeScanner } from "../components/BarcodeScanner";
 
 function Inventory() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -46,6 +48,7 @@ function Inventory() {
     reference: "",
     notes: "",
   });
+  const [showScanner, setShowScanner] = useState(false);
 
   useEffect(() => {
     fetchInventory();
@@ -270,7 +273,28 @@ function Inventory() {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="ipn">IPN</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="ipn">IPN</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowScanner(!showScanner)}
+                    >
+                      <ScanLine className="h-4 w-4 mr-1" />
+                      {showScanner ? "Hide Scanner" : "Scan Barcode"}
+                    </Button>
+                  </div>
+                  {showScanner && (
+                    <div className="mb-2">
+                      <BarcodeScanner
+                        onScan={(code) => {
+                          setReceiveForm(prev => ({ ...prev, ipn: code }));
+                          setShowScanner(false);
+                        }}
+                      />
+                    </div>
+                  )}
                   <Input
                     id="ipn"
                     value={receiveForm.ipn}

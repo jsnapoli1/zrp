@@ -46,6 +46,9 @@ func main() {
 	// Start auto-backup scheduler (default 2am, override with ZRP_BACKUP_TIME=HH:MM)
 	startAutoBackup(os.Getenv("ZRP_BACKUP_TIME"))
 
+	// Start undo log cleanup goroutine
+	go cleanExpiredUndo()
+
 	// Start background notification generator
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -110,6 +113,10 @@ func main() {
 		// Global Search
 		case parts[0] == "search" && len(parts) == 1 && r.Method == "GET":
 			handleGlobalSearch(w, r)
+
+		// Barcode/QR scan lookup
+		case parts[0] == "scan" && len(parts) == 2 && r.Method == "GET":
+			handleScanLookup(w, r, parts[1])
 
 		// Dashboard
 		case path == "dashboard" && r.Method == "GET":
@@ -208,6 +215,8 @@ func main() {
 		// Inventory
 		case parts[0] == "inventory" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":
 			handleBulkInventory(w, r)
+		case parts[0] == "inventory" && len(parts) == 2 && parts[1] == "bulk-update" && r.Method == "POST":
+			handleBulkUpdateInventory(w, r)
 		case parts[0] == "inventory" && len(parts) == 1 && r.Method == "GET":
 			handleListInventory(w, r)
 		case parts[0] == "inventory" && len(parts) == 2 && parts[1] == "transact" && r.Method == "POST":
@@ -240,6 +249,8 @@ func main() {
 		// Work Orders
 		case parts[0] == "workorders" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":
 			handleBulkWorkOrders(w, r)
+		case parts[0] == "workorders" && len(parts) == 2 && parts[1] == "bulk-update" && r.Method == "POST":
+			handleBulkUpdateWorkOrders(w, r)
 		case parts[0] == "workorders" && len(parts) == 1 && r.Method == "GET":
 			handleListWorkOrders(w, r)
 		case parts[0] == "workorders" && len(parts) == 1 && r.Method == "POST":
@@ -276,6 +287,8 @@ func main() {
 		// Devices
 		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":
 			handleBulkDevices(w, r)
+		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "bulk-update" && r.Method == "POST":
+			handleBulkUpdateDevices(w, r)
 		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "export" && r.Method == "GET":
 			handleExportDevices(w, r)
 		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "import" && r.Method == "POST":
@@ -310,6 +323,22 @@ func main() {
 			handleCampaignDevices(w, r, parts[1])
 		case parts[0] == "campaigns" && len(parts) == 5 && parts[2] == "devices" && parts[4] == "mark" && r.Method == "POST":
 			handleMarkCampaignDevice(w, r, parts[1], parts[3])
+
+		// Shipments
+		case parts[0] == "shipments" && len(parts) == 1 && r.Method == "GET":
+			handleListShipments(w, r)
+		case parts[0] == "shipments" && len(parts) == 1 && r.Method == "POST":
+			handleCreateShipment(w, r)
+		case parts[0] == "shipments" && len(parts) == 2 && r.Method == "GET":
+			handleGetShipment(w, r, parts[1])
+		case parts[0] == "shipments" && len(parts) == 2 && r.Method == "PUT":
+			handleUpdateShipment(w, r, parts[1])
+		case parts[0] == "shipments" && len(parts) == 3 && parts[2] == "ship" && r.Method == "POST":
+			handleShipShipment(w, r, parts[1])
+		case parts[0] == "shipments" && len(parts) == 3 && parts[2] == "deliver" && r.Method == "POST":
+			handleDeliverShipment(w, r, parts[1])
+		case parts[0] == "shipments" && len(parts) == 3 && parts[2] == "pack-list" && r.Method == "GET":
+			handleShipmentPackList(w, r, parts[1])
 
 		// RMAs
 		case parts[0] == "rmas" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":
@@ -386,8 +415,22 @@ func main() {
 			handleUpdateEmailConfig(w, r)
 		case parts[0] == "email" && len(parts) == 2 && parts[1] == "test" && r.Method == "POST":
 			handleTestEmail(w, r)
+		case parts[0] == "email" && len(parts) == 2 && parts[1] == "subscriptions" && r.Method == "GET":
+			handleGetEmailSubscriptions(w, r)
+		case parts[0] == "email" && len(parts) == 2 && parts[1] == "subscriptions" && r.Method == "PUT":
+			handleUpdateEmailSubscriptions(w, r)
 		case parts[0] == "email-log" && len(parts) == 1 && r.Method == "GET":
 			handleListEmailLog(w, r)
+
+		// Settings/GitPLM
+		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "gitplm" && r.Method == "GET":
+			handleGetGitPLMConfig(w, r)
+		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "gitplm" && r.Method == "PUT":
+			handleUpdateGitPLMConfig(w, r)
+
+		// Parts gitplm-url
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "gitplm-url" && r.Method == "GET":
+			handleGetGitPLMURL(w, r, parts[1])
 
 		// Settings/Email aliases
 		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "email" && r.Method == "GET":
@@ -418,6 +461,34 @@ func main() {
 			handleListNotifications(w, r)
 		case parts[0] == "notifications" && len(parts) == 3 && parts[2] == "read" && r.Method == "POST":
 			handleMarkNotificationRead(w, r, parts[1])
+
+		// RFQs
+		case parts[0] == "rfqs" && len(parts) == 1 && r.Method == "GET":
+			handleListRFQs(w, r)
+		case parts[0] == "rfqs" && len(parts) == 1 && r.Method == "POST":
+			handleCreateRFQ(w, r)
+		case parts[0] == "rfqs" && len(parts) == 2 && r.Method == "GET":
+			handleGetRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 2 && r.Method == "PUT":
+			handleUpdateRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 2 && r.Method == "DELETE":
+			handleDeleteRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "send" && r.Method == "POST":
+			handleSendRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "award" && r.Method == "POST":
+			handleAwardRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "compare" && r.Method == "GET":
+			handleCompareRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "quotes" && r.Method == "POST":
+			handleCreateRFQQuote(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 4 && parts[2] == "quotes" && r.Method == "PUT":
+			handleUpdateRFQQuote(w, r, parts[1], parts[3])
+
+		// Undo
+		case parts[0] == "undo" && len(parts) == 1 && r.Method == "GET":
+			handleListUndo(w, r)
+		case parts[0] == "undo" && len(parts) == 2 && r.Method == "POST":
+			handlePerformUndo(w, r, parts[1])
 
 		// Backups
 		case parts[0] == "admin" && len(parts) == 2 && parts[1] == "backup" && r.Method == "POST":

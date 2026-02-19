@@ -20,6 +20,7 @@ import {
   Sun,
   User,
   Bell,
+  ScanLine,
 } from "lucide-react";
 
 import { Button } from "../components/ui/button";
@@ -81,6 +82,7 @@ const navigationItems = [
       { title: "Work Orders", url: "/work-orders", icon: Wrench },
       { title: "Inventory", url: "/inventory", icon: Package },
       { title: "NCRs", url: "/ncrs", icon: ClipboardList },
+      { title: "Scan", url: "/scan", icon: ScanLine },
     ],
   },
   {

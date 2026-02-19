@@ -27,6 +27,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { 
   Search, 
   Filter,
+  ScanLine,
   ChevronLeft,
   ChevronRight,
   RotateCcw,
@@ -34,6 +35,7 @@ import {
 } from "lucide-react";
 import { api, type Part, type Category, type ApiResponse } from "../lib/api";
 import { ConfigurableTable, type ColumnDef } from "../components/ConfigurableTable";
+import { BarcodeScanner } from "../components/BarcodeScanner";
 
 interface PartWithFields extends Part {
   category?: string;
@@ -62,6 +64,7 @@ function Parts() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showScanner, setShowScanner] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalParts, setTotalParts] = useState(0);
@@ -422,6 +425,16 @@ function Parts() {
           <CardTitle className="text-base font-medium">Filters</CardTitle>
         </CardHeader>
         <CardContent>
+          {showScanner && (
+            <div className="mb-4">
+              <BarcodeScanner
+                onScan={(code) => {
+                  handleSearch(code);
+                  setShowScanner(false);
+                }}
+              />
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
@@ -434,6 +447,13 @@ function Parts() {
                 />
               </div>
             </div>
+            <Button
+              variant="outline"
+              onClick={() => setShowScanner(!showScanner)}
+            >
+              <ScanLine className="h-4 w-4 mr-1" />
+              Scan
+            </Button>
             <div className="w-full sm:w-48">
               <Select value={selectedCategory} onValueChange={handleCategoryChange}>
                 <SelectTrigger>

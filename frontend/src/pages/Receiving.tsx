@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ClipboardCheck, Clock, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { ClipboardCheck, Clock, CheckCircle, XCircle, AlertTriangle, ScanLine } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -23,11 +23,14 @@ import {
   DialogFooter,
 } from "../components/ui/dialog";
 import { api, type ReceivingInspection } from "../lib/api";
+import { BarcodeScanner } from "../components/BarcodeScanner";
 
 function Receiving() {
   const [inspections, setInspections] = useState<ReceivingInspection[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("");
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanSearch, setScanSearch] = useState("");
   const [inspectDialogOpen, setInspectDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ReceivingInspection | null>(null);
   const [inspectForm, setInspectForm] = useState({
@@ -151,8 +154,30 @@ function Receiving() {
         </Card>
       </div>
 
+      {/* Scanner */}
+      {showScanner && (
+        <Card>
+          <CardContent className="pt-4">
+            <BarcodeScanner
+              onScan={(code) => {
+                setScanSearch(code);
+                setShowScanner(false);
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filter Tabs */}
       <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowScanner(!showScanner)}
+        >
+          <ScanLine className="h-4 w-4 mr-1" />
+          Scan
+        </Button>
         {["", "pending", "inspected"].map((f) => (
           <Button
             key={f}
@@ -191,7 +216,7 @@ function Receiving() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {inspections.map((item) => (
+              {inspections.filter((item) => !scanSearch || item.ipn?.toLowerCase().includes(scanSearch.toLowerCase()) || item.po_number?.toLowerCase().includes(scanSearch.toLowerCase())).map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-mono">RI-{item.id}</TableCell>
                   <TableCell>
