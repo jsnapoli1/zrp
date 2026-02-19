@@ -10,6 +10,30 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// parsePO extracts a PurchaseOrder from APIResponse-wrapped JSON
+func parsePO(t *testing.T, body []byte) PurchaseOrder {
+	t.Helper()
+	var wrap struct {
+		Data PurchaseOrder `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wrap); err != nil {
+		t.Fatalf("parse PO: %v", err)
+	}
+	return wrap.Data
+}
+
+// parsePOGenerateResponse extracts the po_id from the generate PO response
+func parsePOGenerateResponse(t *testing.T, body []byte) map[string]interface{} {
+	t.Helper()
+	var wrap struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wrap); err != nil {
+		t.Fatalf("parse PO generate response: %v", err)
+	}
+	return wrap.Data
+}
+
 func setupProcurementTestDB(t *testing.T) *sql.DB {
 	testDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -288,10 +312,7 @@ func TestHandleCreatePO_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result PurchaseOrder
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
+	result := parsePO(t, w.Body.Bytes())
 
 	if result.ID == "" {
 		t.Error("Expected ID to be generated")
@@ -324,8 +345,7 @@ func TestHandleCreatePO_DefaultStatus(t *testing.T) {
 
 	handleCreatePO(w, req)
 
-	var result PurchaseOrder
-	json.NewDecoder(w.Body).Decode(&result)
+	result := parsePO(t, w.Body.Bytes())
 
 	if result.Status != "draft" {
 		t.Errorf("Expected default status 'draft', got %s", result.Status)
@@ -465,15 +485,17 @@ func TestHandleGeneratePOFromWO_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&result)
+	result := parsePOGenerateResponse(t, w.Body.Bytes())
 
 	if result["po_id"] == nil || result["po_id"] == "" {
 		t.Error("Expected po_id in response")
 	}
 
 	// Verify PO was created
-	poID := result["po_id"].(string)
+	poID, ok := result["po_id"].(string)
+	if !ok {
+		t.Fatalf("po_id is not a string: %v", result["po_id"])
+	}
 	var vendorID string
 	err := db.QueryRow("SELECT vendor_id FROM purchase_orders WHERE id=?", poID).Scan(&vendorID)
 	if err != nil {

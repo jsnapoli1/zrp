@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed - Procurement Handler Tests (2026-02-19)
+
+**Issue:** Three procurement handler tests were failing due to incorrect API response decoding.
+
+**Root Cause:** Tests were attempting to decode responses directly into domain structs, but handlers wrap all responses in an `APIResponse{Data: ...}` envelope. This caused:
+- `TestHandleCreatePO_Success`: Empty ID and vendor_id fields
+- `TestHandleCreatePO_DefaultStatus`: Empty status field  
+- `TestHandleGeneratePOFromWO_Success`: Panic from nil interface conversion
+
+**Fix:**
+- Added helper functions `parsePO()` and `parsePOGenerateResponse()` in `handler_procurement_test.go`
+- Updated failing tests to decode envelope first, then extract data
+- All three tests now pass ✓
+
+**Impact:** Procurement test suite now passes reliably. Pattern matches existing test helpers in `handler_devices_test.go` and `handler_doc_versions_test.go`.
+
+---
+
 ### Fixed - Backend Test Suite (2026-02-19)
 
 **Context:** Multiple backend test suites were failing due to schema mismatches and NULL handling issues.
