@@ -7,12 +7,15 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   }),
 }));
 
 vi.mock("../lib/api", () => ({
   api: {
     performUndo: vi.fn().mockResolvedValue({ status: "restored" }),
+    undoChange: vi.fn().mockResolvedValue({ status: "undone", table_name: "vendors", record_id: "V-001", operation: "delete", redo_id: 2 }),
+    getRecentChanges: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -35,6 +38,20 @@ describe("useUndo", () => {
       expect.objectContaining({
         duration: 5000,
         action: expect.objectContaining({ label: "Undo" }),
+      })
+    );
+  });
+
+  it("showChangeUndoToast calls toast with Redo button", () => {
+    const { result } = renderHook(() => useUndo());
+    act(() => {
+      result.current.showChangeUndoToast(1, "vendors", "V-001", "delete");
+    });
+    expect(toast).toHaveBeenCalledWith(
+      "Undone: delete vendors V-001",
+      expect.objectContaining({
+        duration: 5000,
+        action: expect.objectContaining({ label: "Redo" }),
       })
     );
   });

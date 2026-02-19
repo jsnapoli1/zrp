@@ -157,6 +157,8 @@ function PartDetail() {
   const [marketPricing, setMarketPricing] = useState<MarketPricingResult[]>([]);
   const [marketPricingLoading, setMarketPricingLoading] = useState(false);
   const [marketPricingCached, setMarketPricingCached] = useState(false);
+  const [marketPricingError, setMarketPricingError] = useState<string>("");
+  const [marketPricingUnconfigured, setMarketPricingUnconfigured] = useState<string[]>([]);
   const { configured: gitplmConfigured, buildUrl: gitplmUrl } = useGitPLM();
 
   useEffect(() => {
@@ -262,6 +264,8 @@ function PartDetail() {
       const data = await api.getMarketPricing(decodeURIComponent(ipn), refresh);
       setMarketPricing(data.results || []);
       setMarketPricingCached(data.cached || false);
+      setMarketPricingError(data.error || "");
+      setMarketPricingUnconfigured(data.unconfigured || []);
     } catch (error) {
       console.error("Failed to fetch market pricing:", error);
     } finally {
@@ -594,6 +598,18 @@ function PartDetail() {
                     )}
                   </div>
                 ))}
+              </div>
+            ) : marketPricingError ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Store className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>{marketPricingError}</p>
+                {marketPricingUnconfigured.length > 0 && (
+                  <p className="mt-2 text-sm">
+                    <a href="/distributor-settings" className="text-blue-600 hover:underline">
+                      Configure API keys →
+                    </a>
+                  </p>
+                )}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">

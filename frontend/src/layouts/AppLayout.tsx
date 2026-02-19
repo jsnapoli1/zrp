@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useGlobalUndo } from "../hooks/useUndo";
 import { useWS } from "../contexts/WebSocketContext";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -22,6 +23,7 @@ import {
   Bell,
   ScanLine,
   RotateCcw,
+  Clock,
 } from "lucide-react";
 
 import { Button } from "../components/ui/button";
@@ -124,6 +126,7 @@ export function AppLayout() {
   const [open, setOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const { status: wsStatus } = useWS();
+  useGlobalUndo();
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -216,6 +219,10 @@ export function AppLayout() {
                   {wsStatus === "connected" ? "Live" : wsStatus === "connecting" ? "Connecting" : "Offline"}
                 </span>
               </div>
+
+              <Button variant="ghost" size="icon" onClick={() => navigate("/undo-history")} title="Undo History">
+                <Clock className="h-4 w-4" />
+              </Button>
 
               <Button variant="ghost" size="icon">
                 <Bell className="h-4 w-4" />

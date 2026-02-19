@@ -1855,3 +1855,54 @@ Draft → Sent → Awarded → Closed
 ```
 
 Statuses: `draft`, `sent`, `awarded`, `closed`
+
+---
+
+## Market Pricing
+
+### Get Market Pricing for Part
+`GET /api/v1/parts/:ipn/market-pricing`
+
+Query params: `?refresh=true` to bypass 24h cache and fetch live.
+
+Returns:
+```json
+{
+  "results": [{
+    "id": 1,
+    "part_ipn": "IPN-003",
+    "mpn": "STM32F401",
+    "distributor": "Digikey",
+    "distributor_pn": "DK-STM32F401-ND",
+    "manufacturer": "STMicro",
+    "description": "STM32F401 (Digikey)",
+    "stock_qty": 15000,
+    "lead_time_days": 14,
+    "currency": "USD",
+    "price_breaks": [
+      {"qty": 1, "unit_price": 5.50},
+      {"qty": 10, "unit_price": 4.95},
+      {"qty": 100, "unit_price": 4.40}
+    ],
+    "product_url": "https://www.digikey.com/product-detail/STM32F401",
+    "datasheet_url": "https://www.digikey.com/datasheet/STM32F401.pdf",
+    "fetched_at": "2026-01-01T00:00:00Z"
+  }],
+  "cached": false
+}
+```
+
+### Update Digikey Settings
+`POST /api/v1/settings/digikey`
+
+Body: `{"api_key": "...", "client_id": "..."}`
+
+### Update Mouser Settings
+`POST /api/v1/settings/mouser`
+
+Body: `{"api_key": "..."}`
+
+### Get Distributor Settings
+`GET /api/v1/settings/distributors`
+
+Returns masked API keys for display. Keys are stored in the `app_settings` DB table, not environment variables.

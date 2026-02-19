@@ -7,63 +7,25 @@ import (
 	"testing"
 )
 
-func TestDigikeyClientSearch(t *testing.T) {
-	client := newDigikeyClient("test-key", "test-client")
+func TestDigikeyClientInterface(t *testing.T) {
+	var _ DistributorClient = newDigikeyClient("id", "secret")
+}
+
+func TestMouserClientInterface(t *testing.T) {
+	var _ DistributorClient = newMouserClient("key")
+}
+
+func TestDigikeyClientName(t *testing.T) {
+	client := newDigikeyClient("id", "secret")
 	if client.Name() != "digikey" {
 		t.Fatalf("expected digikey, got %s", client.Name())
 	}
-	results, err := client.Search("STM32F401")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected results")
-	}
-	r := results[0]
-	if r.MPN != "STM32F401" {
-		t.Errorf("expected MPN STM32F401, got %s", r.MPN)
-	}
-	if r.Distributor != "Digikey" {
-		t.Errorf("expected Digikey, got %s", r.Distributor)
-	}
-	if len(r.PriceBreaks) == 0 {
-		t.Error("expected price breaks")
-	}
-	// Price breaks should be descending
-	for i := 1; i < len(r.PriceBreaks); i++ {
-		if r.PriceBreaks[i].UnitPrice >= r.PriceBreaks[i-1].UnitPrice {
-			t.Errorf("price breaks not descending at index %d", i)
-		}
-	}
 }
 
-func TestMouserClientSearch(t *testing.T) {
-	client := newMouserClient("test-key")
+func TestMouserClientName(t *testing.T) {
+	client := newMouserClient("key")
 	if client.Name() != "mouser" {
 		t.Fatalf("expected mouser, got %s", client.Name())
-	}
-	results, err := client.Search("STM32F401")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected results")
-	}
-	r := results[0]
-	if r.Distributor != "Mouser" {
-		t.Errorf("expected Mouser, got %s", r.Distributor)
-	}
-}
-
-func TestMockResultsDeterministic(t *testing.T) {
-	client := newDigikeyClient("k", "c")
-	r1, _ := client.Search("ABC123")
-	r2, _ := client.Search("ABC123")
-	if r1[0].StockQty != r2[0].StockQty {
-		t.Error("mock results should be deterministic for same MPN")
-	}
-	if r1[0].PriceBreaks[0].UnitPrice != r2[0].PriceBreaks[0].UnitPrice {
-		t.Error("mock prices should be deterministic")
 	}
 }
 
@@ -124,20 +86,19 @@ func TestDistributorSettingsHandlers(t *testing.T) {
 	defer cleanup()
 	cookie := loginAdmin(t)
 
-	// Update Digikey settings
-	req := authedRequest("POST", "/api/v1/settings/digikey", `{"api_key":"dk-123","client_id":"cid-456"}`, cookie)
+	// Update Digikey settings (now uses client_id + client_secret)
+	req := authedRequest("POST", "/api/v1/settings/digikey", `{"client_id":"cid-456","client_secret":"secret-789"}`, cookie)
 	w := httptest.NewRecorder()
 	handleUpdateDigikeySettings(w, req)
 	if w.Code != 200 {
 		t.Fatalf("digikey settings: %d %s", w.Code, w.Body.String())
 	}
 
-	// Verify stored
-	if getAppSetting("digikey_api_key") != "dk-123" {
-		t.Error("digikey api key not stored")
-	}
 	if getAppSetting("digikey_client_id") != "cid-456" {
 		t.Error("digikey client id not stored")
+	}
+	if getAppSetting("digikey_client_secret") != "secret-789" {
+		t.Error("digikey client secret not stored")
 	}
 
 	// Update Mouser settings
@@ -157,8 +118,8 @@ func TestDistributorSettingsHandlers(t *testing.T) {
 	handleGetDistributorSettings(w, req)
 	var resp map[string]map[string]string
 	json.NewDecoder(w.Body).Decode(&resp)
-	if !strings.Contains(resp["digikey"]["api_key"], "****") {
-		t.Error("api key should be masked")
+	if !strings.Contains(resp["digikey"]["client_secret"], "****") {
+		t.Error("client secret should be masked")
 	}
 }
 
@@ -178,8 +139,86 @@ func TestMaskSetting(t *testing.T) {
 	}
 }
 
-func TestDistributorClientInterface(t *testing.T) {
-	// Verify both clients satisfy the interface
-	var _ DistributorClient = newDigikeyClient("", "")
-	var _ DistributorClient = newMouserClient("")
+func TestHasDistributorKeys(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// No keys configured
+	if hasDistributorKeys() {
+		t.Error("expected false with no keys")
+	}
+
+	// Only Mouser
+	setAppSetting("mouser_api_key", "test-key")
+	if !hasDistributorKeys() {
+		t.Error("expected true with mouser key")
+	}
+
+	// Reset and set Digikey
+	setAppSetting("mouser_api_key", "")
+	setAppSetting("digikey_client_id", "id")
+	setAppSetting("digikey_client_secret", "secret")
+	if !hasDistributorKeys() {
+		t.Error("expected true with digikey keys")
+	}
+}
+
+func TestGetDistributorClientsNoKeys(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	clients := getDistributorClients()
+	if len(clients) != 0 {
+		t.Errorf("expected 0 clients without keys, got %d", len(clients))
+	}
+}
+
+func TestGetDistributorClientsWithKeys(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	setAppSetting("digikey_client_id", "id")
+	setAppSetting("digikey_client_secret", "secret")
+	setAppSetting("mouser_api_key", "key")
+
+	clients := getDistributorClients()
+	if len(clients) != 2 {
+		t.Errorf("expected 2 clients, got %d", len(clients))
+	}
+}
+
+func TestHandleMarketPricingNotConfigured(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	req := authedRequest("GET", "/api/v1/parts/IPN-001/market-pricing", "", loginAdmin(t))
+	w := httptest.NewRecorder()
+	handleGetMarketPricing(w, req, "IPN-001")
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["not_configured"] != true {
+		t.Error("expected not_configured=true when no API keys set")
+	}
+}
+
+func TestMouserParseHelpers(t *testing.T) {
+	if parseMouserPrice("$1.23") != 1.23 {
+		t.Error("parseMouserPrice failed")
+	}
+	if parseMouserPrice("1,234.56") != 1234.56 {
+		t.Error("parseMouserPrice with commas failed")
+	}
+	if parseMouserAvailability("1,234 In Stock") != 1234 {
+		t.Error("parseMouserAvailability failed")
+	}
+	if parseMouserAvailability("0") != 0 {
+		t.Error("parseMouserAvailability zero failed")
+	}
+	if parseMouserLeadTime("14 Days") != 14 {
+		t.Error("parseMouserLeadTime days failed")
+	}
+	if parseMouserLeadTime("2 Weeks") != 14 {
+		t.Error("parseMouserLeadTime weeks failed")
+	}
 }

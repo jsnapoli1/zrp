@@ -459,6 +459,18 @@ export interface UndoEntry {
   expires_at: string;
 }
 
+export interface ChangeEntry {
+  id: number;
+  table_name: string;
+  record_id: string;
+  operation: string;
+  old_data: string;
+  new_data: string;
+  user_id: string;
+  created_at: string;
+  undone: number;
+}
+
 export interface EmailConfig {
   enabled: boolean;
   smtp_host: string;
@@ -1220,6 +1232,16 @@ class ApiClient {
     return this.request(`/undo/${id}`, { method: 'POST' });
   }
 
+  // Change History
+  async getRecentChanges(limit?: number): Promise<ChangeEntry[]> {
+    const params = limit ? `?limit=${limit}` : '';
+    return this.request(`/changes/recent${params}`);
+  }
+
+  async undoChange(id: number): Promise<{ status: string; table_name: string; record_id: string; operation: string; redo_id: number }> {
+    return this.request(`/changes/${id}`, { method: 'POST' });
+  }
+
   // Backups
   async getBackups(): Promise<{ filename: string; size: number; created_at: string }[]> {
     const resp: any = await this.request('/admin/backups');
@@ -1355,7 +1377,6 @@ class ApiClient {
   async getRFQDashboard(): Promise<RFQDashboard> {
     return this.request('/rfq-dashboard');
   }
-}
 
   // Market Pricing
   async getMarketPricing(partIPN: string, refresh = false): Promise<MarketPricingResponse> {
@@ -1363,7 +1384,7 @@ class ApiClient {
     return this.request(`/parts/${partIPN}/market-pricing${qs}`);
   }
 
-  async updateDigikeySettings(settings: { api_key: string; client_id: string }): Promise<{ status: string }> {
+  async updateDigikeySettings(settings: { client_id: string; client_secret: string }): Promise<{ status: string }> {
     return this.request('/settings/digikey', { method: 'POST', body: JSON.stringify(settings) });
   }
 
@@ -1403,10 +1424,12 @@ export interface MarketPricingResponse {
   results: MarketPricingResult[];
   cached: boolean;
   error?: string;
+  unconfigured?: string[];
+  errors?: string[];
 }
 
 export interface DistributorSettings {
-  digikey: { api_key: string; client_id: string };
+  digikey: { client_id: string; client_secret: string };
   mouser: { api_key: string };
 }
 

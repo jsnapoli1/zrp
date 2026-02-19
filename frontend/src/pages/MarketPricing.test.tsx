@@ -82,6 +82,9 @@ vi.mock("../lib/api", () => ({
     getPartWhereUsed: (...args: unknown[]) => mockGetPartWhereUsed(...args),
     getMarketPricing: (...args: unknown[]) => mockGetMarketPricing(...args),
     getGitPLMConfig: () => Promise.resolve({ base_url: "" }),
+    getDistributorSettings: () => Promise.resolve({ digikey: { client_id: "cid-****cid1", client_secret: "secr****et89" }, mouser: { api_key: "mou-****ey89" } }),
+    updateDigikeySettings: () => Promise.resolve({ status: "ok" }),
+    updateMouserSettings: () => Promise.resolve({ status: "ok" }),
   },
 }));
 
@@ -154,28 +157,8 @@ describe("Market Pricing on PartDetail", () => {
 });
 
 describe("DistributorSettings page", () => {
-  const mockGetDistributorSettings = vi.fn();
-  const mockUpdateDigikeySettings = vi.fn();
-  const mockUpdateMouserSettings = vi.fn();
-
-  vi.mock("../lib/api", () => ({
-    api: {
-      getPart: (...args: unknown[]) => mockGetPart(...args),
-      getPartBOM: (...args: unknown[]) => mockGetPartBOM(...args),
-      getPartCost: (...args: unknown[]) => mockGetPartCost(...args),
-      getPartWhereUsed: (...args: unknown[]) => mockGetPartWhereUsed(...args),
-      getMarketPricing: (...args: unknown[]) => mockGetMarketPricing(...args),
-      getDistributorSettings: (...args: unknown[]) => mockGetDistributorSettings(...args),
-      updateDigikeySettings: (...args: unknown[]) => mockUpdateDigikeySettings(...args),
-      updateMouserSettings: (...args: unknown[]) => mockUpdateMouserSettings(...args),
-    },
-  }));
-
   it("loads and displays settings page", async () => {
-    mockGetDistributorSettings.mockResolvedValue({
-      digikey: { api_key: "dk-1****key1", client_id: "cid-****cid1" },
-      mouser: { api_key: "mou-****ey89" },
-    });
+    mockGetMarketPricing.mockResolvedValue({ results: [], cached: false });
 
     const { default: DistributorSettings } = await import("./DistributorSettings");
     render(<DistributorSettings />);

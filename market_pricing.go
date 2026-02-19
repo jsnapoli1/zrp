@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"math"
-	"math/rand"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,57 +37,174 @@ type PriceBreak struct {
 	UnitPrice float64 `json:"unit_price"`
 }
 
-// DistributorClient is the interface for distributor API integrations
+// DistributorClient is the interface for distributor API integrations.
+// Implement this interface to add new distributor backends.
 type DistributorClient interface {
 	Search(mpn string) ([]MarketPricingResult, error)
 	Name() string
 }
 
-// --- Digikey Mock Client ---
+// httpClient is the shared HTTP client with sensible timeouts for distributor APIs
+var distributorHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+// --- Digikey v4 Product Search API Client ---
+// Docs: https://developer.digikey.com/
+// Endpoints: POST /products/v4/search/keyword
+// Auth: OAuth2 Client Credentials → Bearer token
+//       Header: X-DIGIKEY-Client-Id
 
 type digikeyClient struct {
-	apiKey    string
-	clientID  string
+	clientID     string
+	clientSecret string
 }
 
-func newDigikeyClient(apiKey, clientID string) DistributorClient {
-	return &digikeyClient{apiKey: apiKey, clientID: clientID}
+func newDigikeyClient(clientID, clientSecret string) DistributorClient {
+	return &digikeyClient{clientID: clientID, clientSecret: clientSecret}
 }
 
 func (d *digikeyClient) Name() string { return "digikey" }
 
-func (d *digikeyClient) Search(mpn string) ([]MarketPricingResult, error) {
-	// Mock implementation - replace with real Digikey API v3 call
-	// Real: POST https://api.digikey.com/Search/v3/Products/Keyword
-	// Headers: X-DIGIKEY-Client-Id, Authorization: Bearer <token>
-	r := rand.New(rand.NewSource(hashString(mpn)))
-	basePrice := 0.50 + r.Float64()*20.0
-	stock := r.Intn(50000)
-	leadTime := 7 + r.Intn(21)
+// getDigikeyToken exchanges client credentials for an OAuth2 bearer token.
+// Digikey uses client_credentials grant at https://api.digikey.com/v1/oauth2/token
+func (d *digikeyClient) getToken() (string, error) {
+	body := fmt.Sprintf("client_id=%s&client_secret=%s&grant_type=client_credentials",
+		d.clientID, d.clientSecret)
+	req, err := http.NewRequest("POST", "https://api.digikey.com/v1/oauth2/token",
+		strings.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	return []MarketPricingResult{{
-		MPN:           mpn,
-		Distributor:   "Digikey",
-		DistributorPN: fmt.Sprintf("DK-%s-ND", mpn),
-		Manufacturer:  mockManufacturer(mpn, r),
-		Description:   fmt.Sprintf("%s (Digikey)", mpn),
-		StockQty:      stock,
-		LeadTimeDays:  leadTime,
-		Currency:      "USD",
-		PriceBreaks: []PriceBreak{
-			{Qty: 1, UnitPrice: round2(basePrice)},
-			{Qty: 10, UnitPrice: round2(basePrice * 0.90)},
-			{Qty: 100, UnitPrice: round2(basePrice * 0.80)},
-			{Qty: 1000, UnitPrice: round2(basePrice * 0.65)},
-			{Qty: 5000, UnitPrice: round2(basePrice * 0.55)},
-		},
-		ProductURL:   fmt.Sprintf("https://www.digikey.com/product-detail/%s", mpn),
-		DatasheetURL: fmt.Sprintf("https://www.digikey.com/datasheet/%s.pdf", mpn),
-		FetchedAt:    time.Now().UTC().Format(time.RFC3339),
-	}}, nil
+	resp, err := distributorHTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("digikey oauth request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("digikey oauth error %d: %s", resp.StatusCode, string(b))
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("digikey token decode error: %w", err)
+	}
+	return tokenResp.AccessToken, nil
 }
 
-// --- Mouser Mock Client ---
+func (d *digikeyClient) Search(mpn string) ([]MarketPricingResult, error) {
+	token, err := d.getToken()
+	if err != nil {
+		return nil, fmt.Errorf("digikey auth failed: %w", err)
+	}
+
+	// POST /products/v4/search/keyword
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"Keywords":   mpn,
+		"Limit":      10,
+		"Offset":     0,
+		"FilterOptionsRequest": map[string]interface{}{
+			"ManufacturerFilter": []interface{}{},
+			"MinimumQuantity":    0,
+			"ParameterFilterRequest": map[string]interface{}{
+				"CategoryFilter": nil,
+				"FitFilters":     []interface{}{},
+				"ParameterFilters": []interface{}{},
+			},
+		},
+		"ExcludeMarketPlaceProducts": false,
+	})
+
+	req, err := http.NewRequest("POST", "https://api.digikey.com/products/v4/search/keyword",
+		bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-DIGIKEY-Client-Id", d.clientID)
+
+	resp, err := distributorHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("digikey search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == 429 {
+		return nil, fmt.Errorf("digikey rate limited — retry later")
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("digikey search error %d: %s", resp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	// Parse Digikey v4 response
+	var dkResp struct {
+		Products []struct {
+			DigiKeyPartNumber    string `json:"DigiKeyPartNumber"`
+			ManufacturerPartNumber string `json:"ManufacturerPartNumber"`
+			Manufacturer         struct {
+				Name string `json:"Name"`
+			} `json:"Manufacturer"`
+			ProductDescription string `json:"ProductDescription"`
+			QuantityAvailable  int    `json:"QuantityAvailable"`
+			ManufacturerLeadWeeks string `json:"ManufacturerLeadWeeks"`
+			ProductUrl         string `json:"ProductUrl"`
+			DatasheetUrl       string `json:"DatasheetUrl"`
+			StandardPricing    []struct {
+				BreakQuantity int     `json:"BreakQuantity"`
+				UnitPrice     float64 `json:"UnitPrice"`
+			} `json:"StandardPricing"`
+		} `json:"Products"`
+		ProductsCount int `json:"ProductsCount"`
+	}
+	if err := json.Unmarshal(respBody, &dkResp); err != nil {
+		return nil, fmt.Errorf("digikey response parse error: %w", err)
+	}
+
+	var results []MarketPricingResult
+	for _, p := range dkResp.Products {
+		var pbs []PriceBreak
+		for _, sp := range p.StandardPricing {
+			pbs = append(pbs, PriceBreak{
+				Qty:       sp.BreakQuantity,
+				UnitPrice: round2(sp.UnitPrice),
+			})
+		}
+
+		leadDays := 0
+		if weeks, err := strconv.Atoi(p.ManufacturerLeadWeeks); err == nil {
+			leadDays = weeks * 7
+		}
+
+		results = append(results, MarketPricingResult{
+			MPN:           p.ManufacturerPartNumber,
+			Distributor:   "Digikey",
+			DistributorPN: p.DigiKeyPartNumber,
+			Manufacturer:  p.Manufacturer.Name,
+			Description:   p.ProductDescription,
+			StockQty:      p.QuantityAvailable,
+			LeadTimeDays:  leadDays,
+			Currency:      "USD",
+			PriceBreaks:   pbs,
+			ProductURL:    p.ProductUrl,
+			DatasheetURL:  p.DatasheetUrl,
+			FetchedAt:     time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	return results, nil
+}
+
+// --- Mouser API v2 Client ---
+// Docs: https://api.mouser.com/api/docs/
+// Endpoint: POST /api/v2/search/partnumber?apiKey=<key>
+// No OAuth — API key passed as query parameter
 
 type mouserClient struct {
 	apiKey string
@@ -96,55 +217,150 @@ func newMouserClient(apiKey string) DistributorClient {
 func (m *mouserClient) Name() string { return "mouser" }
 
 func (m *mouserClient) Search(mpn string) ([]MarketPricingResult, error) {
-	// Mock implementation - replace with real Mouser API call
-	// Real: POST https://api.mouser.com/api/v1/search/partnumber?apiKey=<key>
-	r := rand.New(rand.NewSource(hashString(mpn) + 1))
-	basePrice := 0.45 + r.Float64()*22.0
-	stock := r.Intn(40000)
-	leadTime := 5 + r.Intn(28)
-
-	return []MarketPricingResult{{
-		MPN:           mpn,
-		Distributor:   "Mouser",
-		DistributorPN: fmt.Sprintf("MOU-%s", mpn),
-		Manufacturer:  mockManufacturer(mpn, r),
-		Description:   fmt.Sprintf("%s (Mouser)", mpn),
-		StockQty:      stock,
-		LeadTimeDays:  leadTime,
-		Currency:      "USD",
-		PriceBreaks: []PriceBreak{
-			{Qty: 1, UnitPrice: round2(basePrice)},
-			{Qty: 10, UnitPrice: round2(basePrice * 0.88)},
-			{Qty: 100, UnitPrice: round2(basePrice * 0.78)},
-			{Qty: 1000, UnitPrice: round2(basePrice * 0.62)},
-			{Qty: 2500, UnitPrice: round2(basePrice * 0.52)},
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"SearchByPartRequest": map[string]interface{}{
+			"mouserPartNumber":    mpn,
+			"partSearchOptions":   "",
 		},
-		ProductURL:   fmt.Sprintf("https://www.mouser.com/ProductDetail/%s", mpn),
-		DatasheetURL: fmt.Sprintf("https://www.mouser.com/datasheet/%s.pdf", mpn),
-		FetchedAt:    time.Now().UTC().Format(time.RFC3339),
-	}}, nil
+	})
+
+	url := fmt.Sprintf("https://api.mouser.com/api/v2/search/partnumber?apiKey=%s", m.apiKey)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := distributorHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mouser search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == 429 {
+		return nil, fmt.Errorf("mouser rate limited — retry later")
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("mouser search error %d: %s", resp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	// Parse Mouser response
+	var mouserResp struct {
+		Errors []struct {
+			Id      int    `json:"Id"`
+			Code    string `json:"Code"`
+			Message string `json:"Message"`
+		} `json:"Errors"`
+		SearchResults struct {
+			NumberOfResult int `json:"NumberOfResult"`
+			Parts          []struct {
+				MouserPartNumber      string `json:"MouserPartNumber"`
+				ManufacturerPartNumber string `json:"ManufacturerPartNumber"`
+				Manufacturer          string `json:"Manufacturer"`
+				Description           string `json:"Description"`
+				Availability          string `json:"Availability"`
+				LeadTime              string `json:"LeadTime"`
+				ProductDetailUrl      string `json:"ProductDetailUrl"`
+				DataSheetUrl          string `json:"DataSheetUrl"`
+				PriceBreaks           []struct {
+					Quantity int    `json:"Quantity"`
+					Price    string `json:"Price"`
+					Currency string `json:"Currency"`
+				} `json:"PriceBreaks"`
+			} `json:"Parts"`
+		} `json:"SearchResults"`
+	}
+	if err := json.Unmarshal(respBody, &mouserResp); err != nil {
+		return nil, fmt.Errorf("mouser response parse error: %w", err)
+	}
+
+	if len(mouserResp.Errors) > 0 {
+		return nil, fmt.Errorf("mouser API error: %s", mouserResp.Errors[0].Message)
+	}
+
+	var results []MarketPricingResult
+	for _, p := range mouserResp.SearchResults.Parts {
+		var pbs []PriceBreak
+		for _, pb := range p.PriceBreaks {
+			price := parseMouserPrice(pb.Price)
+			if price > 0 {
+				pbs = append(pbs, PriceBreak{
+					Qty:       pb.Quantity,
+					UnitPrice: round2(price),
+				})
+			}
+		}
+
+		stock := parseMouserAvailability(p.Availability)
+		leadDays := parseMouserLeadTime(p.LeadTime)
+
+		results = append(results, MarketPricingResult{
+			MPN:           p.ManufacturerPartNumber,
+			Distributor:   "Mouser",
+			DistributorPN: p.MouserPartNumber,
+			Manufacturer:  p.Manufacturer,
+			Description:   p.Description,
+			StockQty:      stock,
+			LeadTimeDays:  leadDays,
+			Currency:      "USD",
+			PriceBreaks:   pbs,
+			ProductURL:    p.ProductDetailUrl,
+			DatasheetURL:  p.DataSheetUrl,
+			FetchedAt:     time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	return results, nil
+}
+
+// parseMouserPrice handles Mouser's price format like "$1.23" or "1.23"
+func parseMouserPrice(s string) float64 {
+	s = strings.TrimSpace(s)
+	s = strings.Replace(s, "$", "", 1)
+	s = strings.Replace(s, ",", "", -1)
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
+}
+
+// parseMouserAvailability parses "15,000 In Stock" → 15000
+func parseMouserAvailability(s string) int {
+	s = strings.TrimSpace(s)
+	s = strings.Split(s, " ")[0]
+	s = strings.Replace(s, ",", "", -1)
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
+// parseMouserLeadTime parses "14 Days" or "2 Weeks" → days
+func parseMouserLeadTime(s string) int {
+	s = strings.TrimSpace(strings.ToLower(s))
+	parts := strings.Fields(s)
+	if len(parts) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0
+	}
+	if strings.Contains(parts[1], "week") {
+		return n * 7
+	}
+	return n // assume days
 }
 
 // --- Helpers ---
-
-func hashString(s string) int64 {
-	var h int64
-	for _, c := range s {
-		h = h*31 + int64(c)
-	}
-	if h < 0 {
-		h = -h
-	}
-	return h
-}
 
 func round2(f float64) float64 {
 	return math.Round(f*100) / 100
 }
 
-func mockManufacturer(mpn string, r *rand.Rand) string {
-	mfgs := []string{"Texas Instruments", "STMicroelectronics", "Murata", "TDK", "Yageo", "Samsung", "Vishay", "ON Semiconductor"}
-	return mfgs[r.Intn(len(mfgs))]
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // --- DB Cache ---
@@ -188,17 +404,17 @@ func cachePricingResult(r MarketPricingResult) error {
 
 // --- Distributor registry ---
 
-func getDistributorClients() []DistributorClient {
+func getDistributorClients() ([]DistributorClient, []string) {
 	var clients []DistributorClient
+	var unconfigured []string
 
 	// Load Digikey config from app_settings
-	dkKey := getAppSetting("digikey_api_key")
-	dkClient := getAppSetting("digikey_client_id")
-	if dkKey != "" || dkClient != "" {
-		clients = append(clients, newDigikeyClient(dkKey, dkClient))
+	dkClientID := getAppSetting("digikey_client_id")
+	dkClientSecret := getAppSetting("digikey_client_secret")
+	if dkClientID != "" && dkClientSecret != "" {
+		clients = append(clients, newDigikeyClient(dkClientID, dkClientSecret))
 	} else {
-		// Use mock even without keys for demo
-		clients = append(clients, newDigikeyClient("mock", "mock"))
+		unconfigured = append(unconfigured, "Digikey")
 	}
 
 	// Load Mouser config from app_settings
@@ -206,10 +422,10 @@ func getDistributorClients() []DistributorClient {
 	if mouserKey != "" {
 		clients = append(clients, newMouserClient(mouserKey))
 	} else {
-		clients = append(clients, newMouserClient("mock"))
+		unconfigured = append(unconfigured, "Mouser")
 	}
 
-	return clients
+	return clients, unconfigured
 }
 
 func getAppSetting(key string) string {
@@ -246,12 +462,26 @@ func handleGetMarketPricing(w http.ResponseWriter, r *http.Request, partIPN stri
 		}
 	}
 
-	// Fetch from all distributors
-	clients := getDistributorClients()
+	clients, unconfigured := getDistributorClients()
+
+	if len(clients) == 0 {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results":      []MarketPricingResult{},
+			"cached":       false,
+			"error":        "No distributor API keys configured",
+			"unconfigured": unconfigured,
+		})
+		return
+	}
+
+	// Fetch from all configured distributors
 	var results []MarketPricingResult
+	var errors []string
 	for _, c := range clients {
 		res, err := c.Search(mpn)
 		if err != nil {
+			log.Printf("market pricing: %s search for %q failed: %v", c.Name(), mpn, err)
+			errors = append(errors, fmt.Sprintf("%s: %v", c.Name(), err))
 			continue
 		}
 		for i := range res {
@@ -261,7 +491,14 @@ func handleGetMarketPricing(w http.ResponseWriter, r *http.Request, partIPN stri
 		results = append(results, res...)
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{"results": results, "cached": false})
+	resp := map[string]interface{}{"results": results, "cached": false}
+	if len(unconfigured) > 0 {
+		resp["unconfigured"] = unconfigured
+	}
+	if len(errors) > 0 {
+		resp["errors"] = errors
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func getPartMPN(ipn string) string {
@@ -285,18 +522,18 @@ func getPartMPN(ipn string) string {
 
 func handleUpdateDigikeySettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		APIKey   string `json:"api_key"`
-		ClientID string `json:"client_id"`
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, 400)
 		return
 	}
-	if err := setAppSetting("digikey_api_key", body.APIKey); err != nil {
+	if err := setAppSetting("digikey_client_id", body.ClientID); err != nil {
 		http.Error(w, `{"error":"failed to save"}`, 500)
 		return
 	}
-	if err := setAppSetting("digikey_client_id", body.ClientID); err != nil {
+	if err := setAppSetting("digikey_client_secret", body.ClientSecret); err != nil {
 		http.Error(w, `{"error":"failed to save"}`, 500)
 		return
 	}
@@ -321,8 +558,8 @@ func handleUpdateMouserSettings(w http.ResponseWriter, r *http.Request) {
 func handleGetDistributorSettings(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"digikey": map[string]string{
-			"api_key":   maskSetting(getAppSetting("digikey_api_key")),
-			"client_id": maskSetting(getAppSetting("digikey_client_id")),
+			"client_id":     maskSetting(getAppSetting("digikey_client_id")),
+			"client_secret": maskSetting(getAppSetting("digikey_client_secret")),
 		},
 		"mouser": map[string]string{
 			"api_key": maskSetting(getAppSetting("mouser_api_key")),
