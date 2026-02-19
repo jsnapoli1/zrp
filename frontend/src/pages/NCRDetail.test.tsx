@@ -45,7 +45,8 @@ describe("NCRDetail", () => {
     await waitFor(() => {
       expect(screen.getByText("NCR-001")).toBeInTheDocument();
     });
-    expect(screen.getByText("Defective resistor batch")).toBeInTheDocument();
+    // Title appears in header and detail section
+    expect(screen.getAllByText("Defective resistor batch").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("NCR Details")).toBeInTheDocument();
   });
 
@@ -137,7 +138,8 @@ describe("NCRDetail", () => {
     mockGetNCR.mockResolvedValue(mockNCRResolved);
     render(<NCRDetail />);
     await waitFor(() => {
-      expect(screen.getByText("Resolved")).toBeInTheDocument();
+      // "Resolved" appears as both status badge and sidebar label
+      expect(screen.getAllByText("Resolved").length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -201,8 +203,8 @@ describe("NCRDetail", () => {
     // Cancel
     fireEvent.click(screen.getByText("Cancel"));
     
-    // Should be back to view mode with original title
-    expect(screen.getByText("Defective resistor batch")).toBeInTheDocument();
+    // Should be back to view mode with original title (appears in header + detail)
+    expect(screen.getAllByText("Defective resistor batch").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Edit NCR")).toBeInTheDocument();
   });
 
