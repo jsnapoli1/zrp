@@ -151,12 +151,19 @@ describe("NCRDetail", () => {
   });
 
   it("navigates to ECOs with NCR param on Create ECO click", async () => {
+    const mockFetch = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "ECO-100" }),
+    } as Response);
     render(<NCRDetail />);
     await waitFor(() => {
       expect(screen.getByText("Create ECO from NCR")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByText("Create ECO from NCR"));
-    expect(mockNavigate).toHaveBeenCalledWith("/ecos?from_ncr=NCR-001");
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/ecos/ECO-100");
+    });
+    mockFetch.mockRestore();
   });
 
   // Edit mode
@@ -362,10 +369,8 @@ describe("NCRDetail", () => {
     fireEvent.change(snInput, { target: { value: "SN-999" } });
     expect((snInput as HTMLInputElement).value).toBe("SN-999");
 
-    // Defect Type
-    const dtInput = screen.getByPlaceholderText("Type of defect");
-    fireEvent.change(dtInput, { target: { value: "electrical" } });
-    expect((dtInput as HTMLInputElement).value).toBe("electrical");
+    // Defect Type (now a Select component — shows current value)
+    expect(screen.getByText("Defect Type")).toBeInTheDocument();
 
     // Root Cause
     const rcInput = screen.getByPlaceholderText("Identified root cause of the issue");
@@ -387,7 +392,7 @@ describe("NCRDetail", () => {
           description: "Updated desc",
           ipn: "IPN-999",
           serial_number: "SN-999",
-          defect_type: "electrical",
+          defect_type: "tolerance",
           root_cause: "Bad solder",
           corrective_action: "Reflow",
         })

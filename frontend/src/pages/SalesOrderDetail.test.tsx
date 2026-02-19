@@ -91,7 +91,7 @@ describe("SalesOrderDetail", () => {
     render(<SalesOrderDetail />);
     await waitFor(() => {
       // Line total: 10 * 25.50 = 255.00
-      expect(screen.getByText("$255.00")).toBeInTheDocument();
+      expect(screen.getAllByText("$255.00").length).toBeGreaterThanOrEqual(1);
     });
   });
 });

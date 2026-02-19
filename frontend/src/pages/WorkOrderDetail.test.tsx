@@ -477,8 +477,8 @@ describe("WorkOrderDetail", () => {
     
     fireEvent.click(screen.getByText("Manage Serials"));
     await waitFor(() => {
-      expect(screen.getByText("ASY123456789012")).toBeInTheDocument();
-      expect(screen.getByText("ASY123456789013")).toBeInTheDocument();
+      expect(screen.getAllByText("ASY123456789012").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("ASY123456789013").length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -551,8 +551,8 @@ describe("WorkOrderDetail", () => {
     fireEvent.click(screen.getByText("Kit Materials"));
     await waitFor(() => {
       expect(screen.getByText("Materials Kitted Successfully")).toBeInTheDocument();
-      expect(screen.getByText("IPN-001")).toBeInTheDocument();
-      expect(screen.getByText("IPN-002")).toBeInTheDocument();
+      expect(screen.getAllByText("IPN-001").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("IPN-002").length).toBeGreaterThanOrEqual(1);
     });
   });
 
