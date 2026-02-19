@@ -1326,6 +1326,40 @@ Get the direct gitplm-ui URL for a specific part. Returns `configured: false` if
 
 ---
 
+### General Settings
+
+#### GET /api/v1/settings/general
+
+Returns general application settings (app name, company info, currency, date format).
+
+**Response:**
+```json
+{
+  "data": {
+    "app_name": "ZRP",
+    "company_name": "",
+    "company_address": "",
+    "currency": "USD",
+    "date_format": "YYYY-MM-DD"
+  }
+}
+```
+
+#### PUT /api/v1/settings/general
+
+Update general application settings.
+
+**Request Body:**
+```json
+{
+  "app_name": "MyApp",
+  "company_name": "Acme Corp",
+  "company_address": "123 Main St",
+  "currency": "EUR",
+  "date_format": "DD/MM/YYYY"
+}
+```
+
 ### Settings Aliases
 
 The following aliases are also available for the email configuration endpoints:

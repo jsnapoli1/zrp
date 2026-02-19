@@ -2,6 +2,13 @@
 
 All notable changes to ZRP are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1] - 2026-02-18
+
+### Added
+- **Settings hub page** — unified tabbed settings page at `/settings` with sections for General, Email/SMTP, Distributor APIs, GitPLM, Backups, and Users/Auth
+- **General settings API** — `GET/PUT /api/v1/settings/general` for app name, company info, currency, and date format
+- General settings stored in `app_settings` table with `general_` key prefix
+
 ## [0.5.0] - 2026-02-18
 
 ### Added
