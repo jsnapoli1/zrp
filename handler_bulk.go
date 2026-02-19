@@ -234,5 +234,78 @@ func handleBulkRMAs(w http.ResponseWriter, r *http.Request) {
 	jsonResp(w, resp)
 }
 
+func handleBulkParts(w http.ResponseWriter, r *http.Request) {
+	var req BulkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonErr(w, "invalid body", 400); return
+	}
+	allowed := map[string]bool{"delete": true, "archive": true}
+	if !allowed[req.Action] {
+		jsonErr(w, "invalid action: "+req.Action, 400); return
+	}
+	resp := BulkResponse{Errors: []string{}}
+	user := getUsername(r)
+	for _, id := range req.IDs {
+		var exists int
+		db.QueryRow("SELECT COUNT(*) FROM parts WHERE ipn=?", id).Scan(&exists)
+		if exists == 0 {
+			resp.Failed++; resp.Errors = append(resp.Errors, id+": not found"); continue
+		}
+		var err error
+		switch req.Action {
+		case "archive":
+			_, err = db.Exec("UPDATE parts SET status='archived' WHERE ipn=?", id)
+		case "delete":
+			createUndoEntry(user, "delete", "part", id)
+			_, err = db.Exec("DELETE FROM parts WHERE ipn=?", id)
+		}
+		if err != nil {
+			resp.Failed++; resp.Errors = append(resp.Errors, id+": "+err.Error())
+		} else {
+			resp.Success++
+			logAudit(db, user, "bulk_"+req.Action, "part", id, fmt.Sprintf("Bulk %s: %s", req.Action, id))
+		}
+	}
+	jsonResp(w, resp)
+}
+
+func handleBulkPurchaseOrders(w http.ResponseWriter, r *http.Request) {
+	var req BulkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonErr(w, "invalid body", 400); return
+	}
+	allowed := map[string]bool{"approve": true, "cancel": true, "delete": true}
+	if !allowed[req.Action] {
+		jsonErr(w, "invalid action: "+req.Action, 400); return
+	}
+	resp := BulkResponse{Errors: []string{}}
+	now := time.Now().Format("2006-01-02 15:04:05")
+	user := getUsername(r)
+	for _, id := range req.IDs {
+		var exists int
+		db.QueryRow("SELECT COUNT(*) FROM purchase_orders WHERE id=?", id).Scan(&exists)
+		if exists == 0 {
+			resp.Failed++; resp.Errors = append(resp.Errors, id+": not found"); continue
+		}
+		var err error
+		switch req.Action {
+		case "approve":
+			_, err = db.Exec("UPDATE purchase_orders SET status='approved',approved_at=?,approved_by=? WHERE id=?", now, user, id)
+		case "cancel":
+			_, err = db.Exec("UPDATE purchase_orders SET status='cancelled' WHERE id=?", id)
+		case "delete":
+			createUndoEntry(user, "delete", "po", id)
+			_, err = db.Exec("DELETE FROM purchase_orders WHERE id=?", id)
+		}
+		if err != nil {
+			resp.Failed++; resp.Errors = append(resp.Errors, id+": "+err.Error())
+		} else {
+			resp.Success++
+			logAudit(db, user, "bulk_"+req.Action, "po", id, fmt.Sprintf("Bulk %s: %s", req.Action, id))
+		}
+	}
+	jsonResp(w, resp)
+}
+
 // suppress unused import warnings
 var _ = strings.TrimSpace

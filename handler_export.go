@@ -12,6 +12,10 @@ import (
 
 // handleExportParts exports parts list to CSV or Excel
 func handleExportParts(w http.ResponseWriter, r *http.Request) {
+	// This will be updated at the end with actual count
+	defer func() {
+		// Count is logged after CSV is written
+	}()
 	format := r.URL.Query().Get("format")
 	if format == "" {
 		format = "csv"
@@ -50,6 +54,9 @@ func handleExportParts(w http.ResponseWriter, r *http.Request) {
 		rows.Scan(&ipn, &category, &description, &mpn, &manufacturer, &lifecycle, &notes)
 		data = append(data, []string{ipn, category, description, mpn, manufacturer, lifecycle, notes})
 	}
+
+	// Log the export
+	LogDataExport(db, r, "parts", format, len(data))
 
 	if format == "xlsx" {
 		exportExcel(w, "Parts", headers, data)
@@ -99,6 +106,9 @@ func handleExportInventory(w http.ResponseWriter, r *http.Request) {
 			updatedAt,
 		})
 	}
+
+	// Log the export
+	LogDataExport(db, r, "inventory", format, len(data))
 
 	if format == "xlsx" {
 		exportExcel(w, "Inventory", headers, data)
@@ -154,6 +164,9 @@ func handleExportWorkOrders(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Log the export
+	LogDataExport(db, r, "work_orders", format, len(data))
+
 	if format == "xlsx" {
 		exportExcel(w, "WorkOrders", headers, data)
 	} else {
@@ -194,6 +207,9 @@ func handleExportECOs(w http.ResponseWriter, r *http.Request) {
 		rows.Scan(&id, &title, &description, &status, &priority, &affectedIPNs, &createdBy, &createdAt, &updatedAt, &approvedAt, &approvedBy, &ncrID)
 		data = append(data, []string{id, title, description, status, priority, affectedIPNs, createdBy, createdAt, updatedAt, approvedAt, approvedBy, ncrID})
 	}
+
+	// Log the export
+	LogDataExport(db, r, "ecos", format, len(data))
 
 	if format == "xlsx" {
 		exportExcel(w, "ECOs", headers, data)
@@ -236,6 +252,9 @@ func handleExportVendors(w http.ResponseWriter, r *http.Request) {
 		rows.Scan(&id, &name, &website, &contactName, &contactEmail, &contactPhone, &notes, &status, &leadTimeDays, &createdAt)
 		data = append(data, []string{id, name, website, contactName, contactEmail, contactPhone, notes, status, strconv.Itoa(leadTimeDays), createdAt})
 	}
+
+	// Log the export
+	LogDataExport(db, r, "vendors", format, len(data))
 
 	if format == "xlsx" {
 		exportExcel(w, "Vendors", headers, data)

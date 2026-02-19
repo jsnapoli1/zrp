@@ -578,6 +578,9 @@ func buildBOMTree(ipn string, depth, maxDepth int) (*BOMNode, error) {
 }
 
 func handlePartCost(w http.ResponseWriter, r *http.Request, ipn string) {
+	// Log sensitive data access (pricing/cost information)
+	LogSensitiveDataAccess(db, r, "part", ipn, "cost/pricing")
+
 	result := map[string]interface{}{"ipn": ipn}
 
 	// Last unit price from PO lines

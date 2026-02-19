@@ -26,6 +26,14 @@ var allowedDeviceUpdateFields = map[string]bool{
 	"status": true, "customer": true, "location": true,
 }
 
+var allowedPartUpdateFields = map[string]bool{
+	"category": true, "status": true, "lifecycle": true, "min_stock": true,
+}
+
+var allowedECOUpdateFields = map[string]bool{
+	"status": true, "priority": true,
+}
+
 func handleBulkUpdateInventory(w http.ResponseWriter, r *http.Request) {
 	var req BulkUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

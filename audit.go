@@ -11,8 +11,18 @@ import (
 	"time"
 )
 
+// Audit action constants
 const (
-	AuditActionUpdate = "update"
+	AuditActionCreate        = "CREATE"
+	AuditActionUpdate        = "UPDATE"
+	AuditActionDelete        = "DELETE"
+	AuditActionView          = "VIEW"
+	AuditActionViewSensitive = "VIEW_SENSITIVE"
+	AuditActionExport        = "EXPORT"
+	AuditActionLogin         = "LOGIN"
+	AuditActionLogout        = "LOGOUT"
+	AuditActionApprove       = "APPROVE"
+	AuditActionReject        = "REJECT"
 )
 
 // logAudit is the legacy simple audit function - kept for backward compatibility
@@ -426,4 +436,126 @@ func LogSensitiveDataAccess(db *sql.DB, r *http.Request, dataType, recordID, det
 	username := getUsername(r)
 	summary := fmt.Sprintf("Accessed sensitive data: %s (%s) - %s", dataType, recordID, details)
 	logAudit(db, username, "access", dataType, recordID, summary)
+}
+
+// LogAuditOptions contains all options for audit logging
+type LogAuditOptions struct {
+	UserID      int
+	Username    string
+	Action      string
+	Module      string
+	RecordID    string
+	Summary     string
+	BeforeValue interface{}
+	AfterValue  interface{}
+	IPAddress   string
+	UserAgent   string
+}
+
+// LogAuditEnhanced logs a comprehensive audit entry with all fields
+func LogAuditEnhanced(db *sql.DB, opts LogAuditOptions) error {
+	var beforeJSON, afterJSON []byte
+	var err error
+
+	if opts.BeforeValue != nil {
+		beforeJSON, err = json.Marshal(opts.BeforeValue)
+		if err != nil {
+			beforeJSON = nil
+		}
+	}
+
+	if opts.AfterValue != nil {
+		afterJSON, err = json.Marshal(opts.AfterValue)
+		if err != nil {
+			afterJSON = nil
+		}
+	}
+
+	query := `INSERT INTO audit_log 
+		(user_id, username, action, module, record_id, summary, before_value, after_value, ip_address, user_agent) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err = db.Exec(query,
+		opts.UserID,
+		opts.Username,
+		opts.Action,
+		opts.Module,
+		opts.RecordID,
+		opts.Summary,
+		beforeJSON,
+		afterJSON,
+		opts.IPAddress,
+		opts.UserAgent,
+	)
+
+	if err != nil {
+		fmt.Printf("audit log error: %v\n", err)
+		return err
+	}
+
+	// Broadcast WebSocket event for real-time UI updates
+	wsHub.Broadcast(WSEvent{
+		Type:   opts.Module + "_" + strings.ToLower(opts.Action),
+		ID:     opts.RecordID,
+		Action: opts.Action,
+	})
+
+	return nil
+}
+
+// GetUserContext extracts user information from request
+func GetUserContext(r *http.Request, db *sql.DB) (userID int, username string) {
+	cookie, err := r.Cookie("zrp_session")
+	if err != nil {
+		return 0, "system"
+	}
+
+	err = db.QueryRow("SELECT u.id, u.username FROM users u JOIN sessions s ON u.id = s.user_id WHERE s.token = ?", cookie.Value).
+		Scan(&userID, &username)
+	if err != nil {
+		return 0, "system"
+	}
+	return userID, username
+}
+
+// GetClientIP extracts the real client IP from the request (handles proxies)
+func GetClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first (for proxies/load balancers)
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		// Take the first IP if multiple are present
+		ips := strings.Split(xff, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	// Check X-Real-IP header
+	xri := r.Header.Get("X-Real-IP")
+	if xri != "" {
+		return strings.TrimSpace(xri)
+	}
+
+	// Fall back to RemoteAddr
+	ip := r.RemoteAddr
+	// Remove port if present
+	if idx := strings.LastIndex(ip, ":"); idx != -1 {
+		ip = ip[:idx]
+	}
+	return ip
+}
+
+// LogUpdateWithDiff logs an update operation with before/after values
+func LogUpdateWithDiff(db *sql.DB, r *http.Request, module, recordID string, before, after interface{}) {
+	userID, username := GetUserContext(r, db)
+	LogAuditEnhanced(db, LogAuditOptions{
+		UserID:      userID,
+		Username:    username,
+		Action:      AuditActionUpdate,
+		Module:      module,
+		RecordID:    recordID,
+		Summary:     fmt.Sprintf("Updated %s %s", module, recordID),
+		BeforeValue: before,
+		AfterValue:  after,
+		IPAddress:   GetClientIP(r),
+		UserAgent:   r.UserAgent(),
+	})
 }
