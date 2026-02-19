@@ -9,7 +9,11 @@ import {
   Play,
   Settings2,
   ShoppingCart,
-  Printer
+  Printer,
+  Wrench,
+  Plus,
+  Hash,
+  TestTube
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -38,7 +42,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 // Tabs removed - not used in this component
-import { api, type WorkOrder, type Vendor } from "../lib/api";
+import { api, type WorkOrder, type Vendor, type WOSerial } from "../lib/api";
 import { toast } from "sonner";
 interface BOMItem {
   ipn: string;
@@ -59,18 +63,24 @@ function WorkOrderDetail() {
     bom: BOMItem[];
   } | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [serials, setSerials] = useState<WOSerial[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [generatePODialogOpen, setGeneratePODialogOpen] = useState(false);
+  const [kitDialogOpen, setKitDialogOpen] = useState(false);
+  const [serialDialogOpen, setSerialDialogOpen] = useState(false);
+  const [kittingResults, setKittingResults] = useState<any>(null);
 
   const [newStatus, setNewStatus] = useState("");
   const [selectedVendor, setSelectedVendor] = useState("");
+  const [newSerial, setNewSerial] = useState("");
 
   useEffect(() => {
     if (id) {
       fetchWorkOrderDetail();
       fetchBOMData();
       fetchVendors();
+      fetchSerials();
     }
   }, [id]);
 
@@ -108,6 +118,17 @@ function WorkOrderDetail() {
     }
   };
 
+  const fetchSerials = async () => {
+    if (!id) return;
+    
+    try {
+      const data = await api.getWorkOrderSerials(id);
+      setSerials(data);
+    } catch (error) {
+      toast.error("Failed to fetch serials"); console.error("Failed to fetch serials:", error);
+    }
+  };
+
   const handleStatusChange = async () => {
     if (!id || !newStatus) return;
     
@@ -128,10 +149,50 @@ function WorkOrderDetail() {
       const result = await api.generatePOFromWorkOrder(id, selectedVendor);
       setGeneratePODialogOpen(false);
       setSelectedVendor("");
-      // Navigate to the created PO or show success message
-      console.log(`Generated PO ${result.po_id} with ${result.lines} line items`);
+      toast.success(`Generated PO ${result.po_id} with ${result.lines} line items`);
     } catch (error) {
       toast.error("Failed to generate PO"); console.error("Failed to generate PO:", error);
+    }
+  };
+
+  const handleKitMaterials = async () => {
+    if (!id) return;
+    
+    try {
+      const result = await api.kitWorkOrderMaterials(id);
+      setKittingResults(result);
+      setKitDialogOpen(false);
+      toast.success("Materials kitted successfully");
+      fetchWorkOrderDetail(); // Refresh to update status
+      fetchBOMData(); // Refresh to show reserved quantities
+    } catch (error) {
+      toast.error("Failed to kit materials"); console.error("Failed to kit materials:", error);
+    }
+  };
+
+  const handleAddSerial = async () => {
+    if (!id || !newSerial.trim()) return;
+    
+    try {
+      await api.addWorkOrderSerial(id, { serial_number: newSerial.trim(), status: "assigned" });
+      setSerialDialogOpen(false);
+      setNewSerial("");
+      toast.success("Serial number added successfully");
+      fetchSerials();
+    } catch (error) {
+      toast.error("Failed to add serial number"); console.error("Failed to add serial number:", error);
+    }
+  };
+
+  const handleGenerateSerial = async () => {
+    if (!id) return;
+    
+    try {
+      await api.addWorkOrderSerial(id, { status: "assigned" }); // Empty serial will be auto-generated
+      toast.success("Serial number generated successfully");
+      fetchSerials();
+    } catch (error) {
+      toast.error("Failed to generate serial number"); console.error("Failed to generate serial number:", error);
     }
   };
 
@@ -331,6 +392,7 @@ function WorkOrderDetail() {
                         <SelectValue placeholder="Select new status" />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
                         <SelectItem value="open">Open</SelectItem>
                         <SelectItem value="in_progress">In Progress</SelectItem>
                         <SelectItem value="on_hold">On Hold</SelectItem>

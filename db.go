@@ -632,6 +632,35 @@ func runMigrations() error {
 		}
 	}
 
+	// Quality workflow improvements - add missing columns
+	qualityMigrations := []string{
+		// Add created_by to NCR table (Gap 5.2)
+		`ALTER TABLE ncrs ADD COLUMN created_by TEXT DEFAULT ''`,
+		
+		// Add ncr_id to ECO table to link ECOs back to NCRs
+		`ALTER TABLE ecos ADD COLUMN ncr_id TEXT DEFAULT ''`,
+		
+		// Update CAPA status values to match workflow (Gap 5.5)
+		// Note: SQLite doesn't support modifying CHECK constraints, so this is documented
+		// Current: ('open','in_progress','pending_review','closed','cancelled')
+		// Should be: ('draft','pending_approval','approved','in_progress','verification','closed')
+		
+		// Add indexes for better performance
+		`CREATE INDEX IF NOT EXISTS idx_ncrs_created_by ON ncrs(created_by)`,
+		`CREATE INDEX IF NOT EXISTS idx_ecos_ncr_id ON ecos(ncr_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_capas_linked_ncr_id ON capas(linked_ncr_id)`,
+	}
+	
+	for _, migration := range qualityMigrations {
+		// Use IF NOT EXISTS pattern for ALTER TABLE
+		if _, err := db.Exec(migration); err != nil {
+			// Ignore "duplicate column" errors - column already exists
+			if !strings.Contains(err.Error(), "duplicate column") {
+				log.Printf("Quality migration warning: %v\nSQL: %s", err, migration)
+			}
+		}
+	}
+
 	return nil
 }
 

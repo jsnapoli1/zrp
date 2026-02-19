@@ -117,6 +117,13 @@ func handleCreateCAPA(w http.ResponseWriter, r *http.Request) {
 
 func handleUpdateCAPA(w http.ResponseWriter, r *http.Request, id string) {
 	oldSnap, _ := getCAPASnapshot(id)
+	username := getUsername(r)
+	userRole := getUserRole(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		jsonErr(w, "authentication required", 401)
+		return
+	}
 
 	var body map[string]interface{}
 	if err := decodeBody(r, &body); err != nil {
@@ -141,9 +148,11 @@ func handleUpdateCAPA(w http.ResponseWriter, r *http.Request, id string) {
 	dueDate := getString("due_date")
 	status := getString("status")
 	effectivenessCheck := getString("effectiveness_check")
+	
+	// Handle approvals with proper RBAC (Gap 5.4)
 	approvedByQE := getString("approved_by_qe")
 	approvedByMgr := getString("approved_by_mgr")
-
+	
 	now := time.Now().Format("2006-01-02 15:04:05")
 
 	// Validate status transitions
@@ -156,39 +165,77 @@ func handleUpdateCAPA(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	// Set approval timestamps
-	var qeAt, mgrAt interface{}
-	if approvedByQE != "" {
-		// Check if already approved
-		var existing sql.NullString
-		db.QueryRow("SELECT approved_by_qe_at FROM capas WHERE id=?", id).Scan(&existing)
-		if !existing.Valid {
-			qeAt = now
-		}
-	}
-	if approvedByMgr != "" {
-		var existing sql.NullString
-		db.QueryRow("SELECT approved_by_mgr_at FROM capas WHERE id=?", id).Scan(&existing)
-		if !existing.Valid {
-			mgrAt = now
-		}
+	// Get current CAPA state
+	var currentCAPA CAPA
+	var qeAt, mgrAt sql.NullString
+	err = db.QueryRow(`SELECT id,title,type,COALESCE(linked_ncr_id,''),COALESCE(linked_rma_id,''),
+		COALESCE(root_cause,''),COALESCE(action_plan,''),COALESCE(owner,''),COALESCE(due_date,''),
+		status,COALESCE(effectiveness_check,''),COALESCE(approved_by_qe,''),approved_by_qe_at,
+		COALESCE(approved_by_mgr,''),approved_by_mgr_at,created_at,updated_at
+		FROM capas WHERE id=?`, id).
+		Scan(&currentCAPA.ID, &currentCAPA.Title, &currentCAPA.Type, &currentCAPA.LinkedNCRID, &currentCAPA.LinkedRMAID,
+			&currentCAPA.RootCause, &currentCAPA.ActionPlan, &currentCAPA.Owner, &currentCAPA.DueDate,
+			&currentCAPA.Status, &currentCAPA.EffectivenessCheck, &currentCAPA.ApprovedByQE, &qeAt,
+			&currentCAPA.ApprovedByMgr, &mgrAt, &currentCAPA.CreatedAt, &currentCAPA.UpdatedAt)
+	if err != nil {
+		jsonErr(w, "CAPA not found", 404)
+		return
 	}
 
-	_, err := db.Exec(`UPDATE capas SET title=?,type=?,linked_ncr_id=?,linked_rma_id=?,root_cause=?,action_plan=?,
+	// Handle approval actions with security (Gap 5.4)
+	var newQEAt, newMgrAt interface{}
+	newApprovedByQE := currentCAPA.ApprovedByQE
+	newApprovedByMgr := currentCAPA.ApprovedByMgr
+	
+	// QE approval security check
+	if approvedByQE != "" && approvedByQE != currentCAPA.ApprovedByQE {
+		if !canApproveCAPA(r, "qe") {
+			jsonErr(w, "insufficient permissions: only QE role can approve as QE", 403)
+			return
+		}
+		newApprovedByQE = fmt.Sprintf("%d", userID) // Store actual user ID
+		newQEAt = now
+	}
+	
+	// Manager approval security check
+	if approvedByMgr != "" && approvedByMgr != currentCAPA.ApprovedByMgr {
+		if !canApproveCAPA(r, "manager") {
+			jsonErr(w, "insufficient permissions: only manager role can approve as manager", 403)
+			return
+		}
+		newApprovedByMgr = fmt.Sprintf("%d", userID) // Store actual user ID
+		newMgrAt = now
+	}
+
+	// Auto-advance status when both approvals are received (Gap 5.5)
+	newStatus := status
+	if status == "" {
+		newStatus = currentCAPA.Status // Keep current status if not specified
+	}
+	
+	// Check if we should auto-advance to approved
+	if (newApprovedByQE != "" && newApprovedByMgr != "") && 
+	   (currentCAPA.Status == "open" || currentCAPA.Status == "pending_approval") &&
+	   newStatus != "approved" {
+		newStatus = "approved"
+		logAudit(db, username, "auto-advanced", "capa", id, "Auto-advanced to approved status after both approvals received")
+	}
+
+	_, err = db.Exec(`UPDATE capas SET title=?,type=?,linked_ncr_id=?,linked_rma_id=?,root_cause=?,action_plan=?,
 		owner=?,due_date=?,status=?,effectiveness_check=?,approved_by_qe=?,
 		approved_by_qe_at=COALESCE(?,approved_by_qe_at),approved_by_mgr=?,
 		approved_by_mgr_at=COALESCE(?,approved_by_mgr_at),updated_at=? WHERE id=?`,
 		title, capaType, linkedNCRID, linkedRMAID, rootCause, actionPlan,
-		owner, dueDate, status, effectivenessCheck, approvedByQE,
-		qeAt, approvedByMgr, mgrAt, now, id)
+		owner, dueDate, newStatus, effectivenessCheck, newApprovedByQE,
+		newQEAt, newApprovedByMgr, newMgrAt, now, id)
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
 		return
 	}
 
-	logAudit(db, getUsername(r), "updated", "capa", id, "Updated "+id+": status="+status)
+	logAudit(db, username, "updated", "capa", id, "Updated "+id+": status="+newStatus)
 	newSnap, _ := getCAPASnapshot(id)
-	recordChangeJSON(getUsername(r), "capas", id, "update", oldSnap, newSnap)
+	recordChangeJSON(username, "capas", id, "update", oldSnap, newSnap)
 
 	handleGetCAPA(w, r, id)
 }

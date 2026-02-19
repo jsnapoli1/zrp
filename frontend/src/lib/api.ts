@@ -188,6 +188,14 @@ export interface WorkOrder {
   completed_at?: string;
 }
 
+export interface WOSerial {
+  id: number;
+  wo_id: string;
+  serial_number: string;
+  status: string;
+  notes: string;
+}
+
 export interface Vendor {
   id: string;
   name: string;
@@ -1002,6 +1010,37 @@ class ApiClient {
     return this.request('/pos/generate', {
       method: 'POST',
       body: JSON.stringify({ wo_id: woId, vendor_id: vendorId }),
+    });
+  }
+
+  // Work Order Material Kitting
+  async kitWorkOrderMaterials(woId: string): Promise<{
+    wo_id: string;
+    status: string;
+    items: Array<{
+      ipn: string;
+      required: number;
+      on_hand: number;
+      reserved: number;
+      kitted: number;
+      status: string;
+    }>;
+    kitted_at: string;
+  }> {
+    return this.request(`/workorders/${woId}/kit`, {
+      method: 'POST',
+    });
+  }
+
+  // Work Order Serial Management
+  async getWorkOrderSerials(woId: string): Promise<WOSerial[]> {
+    return this.request(`/workorders/${woId}/serials`);
+  }
+
+  async addWorkOrderSerial(woId: string, serial: Partial<WOSerial>): Promise<WOSerial> {
+    return this.request(`/workorders/${woId}/serials`, {
+      method: 'POST',
+      body: JSON.stringify(serial),
     });
   }
 

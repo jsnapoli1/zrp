@@ -78,18 +78,151 @@ func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 		jsonErr(w, "invalid body", 400)
 		return
 	}
+
+	// Get current work order state for validation
+	var currentWO WorkOrder
+	var sa, ca sql.NullString
+	err := db.QueryRow("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
+		Scan(&currentWO.ID, &currentWO.AssemblyIPN, &currentWO.Qty, &currentWO.Status, &currentWO.Priority, &currentWO.Notes, &currentWO.CreatedAt, &sa, &ca)
+	if err != nil {
+		jsonErr(w, "work order not found", 404)
+		return
+	}
+
+	// Status transition validation
+	ve := &ValidationErrors{}
+	if wo.Status != "" {
+		validateEnum(ve, "status", wo.Status, validWOStatuses)
+		// Enforce status state machine transitions
+		if !isValidStatusTransition(currentWO.Status, wo.Status) {
+			ve.Add("status", fmt.Sprintf("invalid transition from %s to %s", currentWO.Status, wo.Status))
+		}
+	}
+	if wo.Priority != "" { validateEnum(ve, "priority", wo.Priority, validWOPriorities) }
+	if wo.Qty < 0 { ve.Add("qty", "must be non-negative") }
+	if ve.HasErrors() { jsonErr(w, ve.Error(), 400); return }
+
 	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err := db.Exec("UPDATE work_orders SET assembly_ipn=?,qty=?,status=?,priority=?,notes=?,started_at=CASE WHEN ?='in_progress' AND started_at IS NULL THEN ? ELSE started_at END,completed_at=CASE WHEN ?='completed' THEN ? ELSE completed_at END WHERE id=?",
+	
+	// Start transaction for atomic updates
+	tx, err := db.Begin()
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	defer tx.Rollback()
+
+	// Update work order
+	_, err = tx.Exec("UPDATE work_orders SET assembly_ipn=?,qty=?,status=?,priority=?,notes=?,started_at=CASE WHEN ?='in_progress' AND started_at IS NULL THEN ? ELSE started_at END,completed_at=CASE WHEN ?='completed' THEN ? ELSE completed_at END WHERE id=?",
 		wo.AssemblyIPN, wo.Qty, wo.Status, wo.Priority, wo.Notes, wo.Status, now, wo.Status, now, id)
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
 		return
 	}
+
+	// Handle inventory integration on completion
+	if wo.Status == "completed" && currentWO.Status != "completed" {
+		err = handleWorkOrderCompletion(tx, id, wo.AssemblyIPN, wo.Qty, getUsername(r))
+		if err != nil {
+			jsonErr(w, "failed to update inventory on completion: "+err.Error(), 500)
+			return
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+
 	logAudit(db, getUsername(r), "updated", "workorder", id, "Updated WO "+id+": status="+wo.Status)
 	newSnap, _ := getWorkOrderSnapshot(id)
 	recordChangeJSON(getUsername(r), "work_orders", id, "update", oldSnap, newSnap)
 	go emailOnOverdueWorkOrder(id)
 	handleGetWorkOrder(w, r, id)
+}
+
+func isValidStatusTransition(from, to string) bool {
+	// Define valid state machine transitions
+	validTransitions := map[string][]string{
+		"draft":       {"open", "cancelled"},
+		"open":        {"in_progress", "on_hold", "cancelled"},
+		"in_progress": {"completed", "on_hold", "cancelled"},
+		"on_hold":     {"in_progress", "open", "cancelled"},
+		"completed":   {}, // Terminal state
+		"cancelled":   {}, // Terminal state
+	}
+	
+	allowedStates, exists := validTransitions[from]
+	if !exists {
+		return false
+	}
+	
+	for _, state := range allowedStates {
+		if state == to {
+			return true
+		}
+	}
+	return false
+}
+
+func handleWorkOrderCompletion(tx *sql.Tx, woID, assemblyIPN string, qty int, username string) error {
+	now := time.Now().Format("2006-01-02 15:04:05")
+	
+	// 1. Add finished goods to inventory
+	// First ensure inventory record exists for the assembly
+	_, err := tx.Exec("INSERT OR IGNORE INTO inventory (ipn, description) VALUES (?, ?)", 
+		assemblyIPN, "Assembled "+assemblyIPN)
+	if err != nil {
+		return fmt.Errorf("failed to create inventory record: %w", err)
+	}
+	
+	// Add finished goods quantity
+	_, err = tx.Exec("UPDATE inventory SET qty_on_hand = qty_on_hand + ?, updated_at = ? WHERE ipn = ?",
+		qty, now, assemblyIPN)
+	if err != nil {
+		return fmt.Errorf("failed to update finished goods inventory: %w", err)
+	}
+	
+	// Log finished goods transaction
+	_, err = tx.Exec("INSERT INTO inventory_transactions (ipn,type,qty,reference,notes,created_at) VALUES (?,?,?,?,?,?)",
+		assemblyIPN, "receive", qty, woID, "WO "+woID+" completion", now)
+	if err != nil {
+		return fmt.Errorf("failed to log finished goods transaction: %w", err)
+	}
+	
+	// 2. Deduct consumed materials based on BOM (simplified - using all inventory items for now)
+	rows, err := tx.Query("SELECT ipn, qty_reserved FROM inventory WHERE qty_reserved > 0")
+	if err != nil {
+		return fmt.Errorf("failed to query reserved materials: %w", err)
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var ipn string
+		var reserved float64
+		if err := rows.Scan(&ipn, &reserved); err != nil {
+			continue
+		}
+		
+		// Calculate consumption based on quantity (simplified 1:1 for now)
+		consumed := reserved * float64(qty)
+		
+		// Deduct from on_hand and release reservation
+		_, err = tx.Exec("UPDATE inventory SET qty_on_hand = qty_on_hand - ?, qty_reserved = qty_reserved - ?, updated_at = ? WHERE ipn = ?",
+			consumed, reserved, now, ipn)
+		if err != nil {
+			return fmt.Errorf("failed to consume material %s: %w", ipn, err)
+		}
+		
+		// Log material consumption
+		_, err = tx.Exec("INSERT INTO inventory_transactions (ipn,type,qty,reference,notes,created_at) VALUES (?,?,?,?,?,?)",
+			ipn, "issue", consumed, woID, "WO "+woID+" material consumption", now)
+		if err != nil {
+			return fmt.Errorf("failed to log material consumption: %w", err)
+		}
+	}
+	
+	return nil
 }
 
 func handleWorkOrderBOM(w http.ResponseWriter, r *http.Request, id string) {
@@ -276,4 +409,223 @@ func handleWorkOrderPDF(w http.ResponseWriter, r *http.Request, id string) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
+}
+
+func handleWorkOrderKit(w http.ResponseWriter, r *http.Request, id string) {
+	// Check if work order exists
+	var assemblyIPN string
+	var qty int
+	var status string
+	err := db.QueryRow("SELECT assembly_ipn,qty,status FROM work_orders WHERE id=?", id).Scan(&assemblyIPN, &qty, &status)
+	if err != nil {
+		jsonErr(w, "work order not found", 404)
+		return
+	}
+
+	// Don't allow kitting if already completed or cancelled
+	if status == "completed" || status == "cancelled" {
+		jsonErr(w, "cannot kit materials for completed or cancelled work order", 400)
+		return
+	}
+
+	// Get BOM requirements (simplified - using inventory as BOM for now)
+	type KitResult struct {
+		IPN         string  `json:"ipn"`
+		Required    float64 `json:"required"`
+		OnHand      float64 `json:"on_hand"`
+		Reserved    float64 `json:"reserved"`
+		Kitted      float64 `json:"kitted"`
+		Status      string  `json:"status"`
+	}
+
+	rows, err := db.Query("SELECT ipn, qty_on_hand, qty_reserved FROM inventory")
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var kitResults []KitResult
+	kitSuccess := true
+	
+	tx, err := db.Begin()
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	defer tx.Rollback()
+
+	for rows.Next() {
+		var result KitResult
+		err := rows.Scan(&result.IPN, &result.OnHand, &result.Reserved)
+		if err != nil {
+			continue
+		}
+		
+		result.Required = float64(qty) // Simple 1:1 ratio for now
+		available := result.OnHand - result.Reserved
+		
+		if available >= result.Required {
+			// Reserve the materials
+			result.Kitted = result.Required
+			result.Status = "kitted"
+			_, err = tx.Exec("UPDATE inventory SET qty_reserved = qty_reserved + ? WHERE ipn = ?", 
+				result.Required, result.IPN)
+			if err != nil {
+				result.Status = "error"
+				result.Kitted = 0
+				kitSuccess = false
+			}
+		} else if available > 0 {
+			// Partial kit
+			result.Kitted = available
+			result.Status = "partial"
+			_, err = tx.Exec("UPDATE inventory SET qty_reserved = qty_reserved + ? WHERE ipn = ?", 
+				available, result.IPN)
+			if err != nil {
+				result.Status = "error"
+				result.Kitted = 0
+				kitSuccess = false
+			}
+		} else {
+			result.Status = "shortage"
+		}
+		
+		kitResults = append(kitResults, result)
+	}
+
+	if kitSuccess {
+		// Update work order with kitting timestamp and status
+		now := time.Now().Format("2006-01-02 15:04:05")
+		_, err = tx.Exec("UPDATE work_orders SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END WHERE id = ?", id)
+		if err != nil {
+			jsonErr(w, err.Error(), 500)
+			return
+		}
+		
+		// Log the kitting activity
+		logAudit(db, getUsername(r), "kitted", "workorder", id, "Kitted materials for WO "+id)
+		
+		if err = tx.Commit(); err != nil {
+			jsonErr(w, err.Error(), 500)
+			return
+		}
+		
+		jsonResp(w, map[string]interface{}{
+			"wo_id": id,
+			"status": "kitted",
+			"items": kitResults,
+			"kitted_at": now,
+		})
+	} else {
+		jsonErr(w, "kitting failed for some items", 400)
+	}
+}
+
+func handleWorkOrderSerials(w http.ResponseWriter, r *http.Request, id string) {
+	// Verify work order exists
+	var exists int
+	err := db.QueryRow("SELECT 1 FROM work_orders WHERE id=?", id).Scan(&exists)
+	if err != nil {
+		jsonErr(w, "work order not found", 404)
+		return
+	}
+
+	rows, err := db.Query("SELECT id,wo_id,serial_number,status,COALESCE(notes,'') FROM wo_serials WHERE wo_id=? ORDER BY serial_number", id)
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var serials []WOSerial
+	for rows.Next() {
+		var serial WOSerial
+		err := rows.Scan(&serial.ID, &serial.WOID, &serial.SerialNumber, &serial.Status, &serial.Notes)
+		if err != nil {
+			continue
+		}
+		serials = append(serials, serial)
+	}
+	
+	if serials == nil {
+		serials = []WOSerial{}
+	}
+	
+	jsonResp(w, serials)
+}
+
+func handleWorkOrderAddSerial(w http.ResponseWriter, r *http.Request, id string) {
+	// Verify work order exists
+	var assemblyIPN string
+	var woStatus string
+	err := db.QueryRow("SELECT assembly_ipn,status FROM work_orders WHERE id=?", id).Scan(&assemblyIPN, &woStatus)
+	if err != nil {
+		jsonErr(w, "work order not found", 404)
+		return
+	}
+
+	// Don't allow adding serials to completed or cancelled WOs
+	if woStatus == "completed" || woStatus == "cancelled" {
+		jsonErr(w, "cannot add serials to completed or cancelled work order", 400)
+		return
+	}
+
+	var serial WOSerial
+	if err := decodeBody(r, &serial); err != nil {
+		jsonErr(w, "invalid body", 400)
+		return
+	}
+
+	ve := &ValidationErrors{}
+	if serial.SerialNumber == "" {
+		// Auto-generate serial number if not provided
+		serial.SerialNumber = generateSerialNumber(assemblyIPN)
+	}
+	
+	// Check for duplicate serial number
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM wo_serials WHERE serial_number=?", serial.SerialNumber).Scan(&count)
+	if count > 0 {
+		ve.Add("serial_number", "serial number already exists")
+	}
+	
+	if ve.HasErrors() {
+		jsonErr(w, ve.Error(), 400)
+		return
+	}
+
+	serial.WOID = id
+	if serial.Status == "" {
+		serial.Status = "assigned"
+	}
+
+	_, err = db.Exec("INSERT INTO wo_serials (wo_id,serial_number,status,notes) VALUES (?,?,?,?)",
+		serial.WOID, serial.SerialNumber, serial.Status, serial.Notes)
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+
+	logAudit(db, getUsername(r), "created", "serial", serial.SerialNumber, "Added serial "+serial.SerialNumber+" to WO "+id)
+	
+	// Get the created serial with ID
+	err = db.QueryRow("SELECT id,wo_id,serial_number,status,COALESCE(notes,'') FROM wo_serials WHERE wo_id=? AND serial_number=?", 
+		id, serial.SerialNumber).Scan(&serial.ID, &serial.WOID, &serial.SerialNumber, &serial.Status, &serial.Notes)
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	
+	jsonResp(w, serial)
+}
+
+func generateSerialNumber(assemblyIPN string) string {
+	// Simple serial number generation: IPN prefix + timestamp
+	prefix := strings.Split(assemblyIPN, "-")[0]
+	if len(prefix) > 3 {
+		prefix = prefix[:3]
+	}
+	timestamp := time.Now().Format("060102150405") // YYMMDDHHMMSS
+	return fmt.Sprintf("%s%s", strings.ToUpper(prefix), timestamp)
 }

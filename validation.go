@@ -155,7 +155,7 @@ var (
 	validECOStatuses           = []string{"draft", "review", "approved", "implemented", "rejected", "cancelled"}
 	validECOPriorities         = []string{"low", "normal", "high", "critical"}
 	validPOStatuses            = []string{"draft", "sent", "confirmed", "partial", "received", "cancelled"}
-	validWOStatuses            = []string{"open", "in_progress", "complete", "cancelled", "on_hold"}
+	validWOStatuses            = []string{"draft", "open", "in_progress", "completed", "cancelled", "on_hold"}
 	validWOPriorities          = []string{"low", "normal", "high", "critical"}
 	validNCRSeverities         = []string{"minor", "major", "critical"}
 	validNCRStatuses           = []string{"open", "investigating", "resolved", "closed"}
