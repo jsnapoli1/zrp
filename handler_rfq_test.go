@@ -321,6 +321,204 @@ func TestRFQAwardValidation(t *testing.T) {
 	}
 }
 
+func TestRFQCloseWorkflow(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+	cookie := loginAdmin(t)
+
+	// Create and send
+	body := `{"title":"Close Test","lines":[{"ipn":"IPN-001","description":"Resistor","qty":100,"unit":"ea"}],"vendors":[{"vendor_id":"V-001"}]}`
+	req := authedRequest("POST", "/api/v1/rfqs", body, cookie)
+	w := httptest.NewRecorder()
+	handleCreateRFQ(w, req)
+	rfq := parseRFQ(w.Body.Bytes())
+
+	// Can't close draft
+	req = authedRequest("POST", "/api/v1/rfqs/"+rfq.ID+"/close", "", cookie)
+	w = httptest.NewRecorder()
+	handleCloseRFQ(w, req, rfq.ID)
+	if w.Code != 400 {
+		t.Errorf("expected 400 for closing draft, got %d", w.Code)
+	}
+
+	// Send it
+	req = authedRequest("POST", "/api/v1/rfqs/"+rfq.ID+"/send", "", cookie)
+	w = httptest.NewRecorder()
+	handleSendRFQ(w, req, rfq.ID)
+
+	// Close sent RFQ
+	req = authedRequest("POST", "/api/v1/rfqs/"+rfq.ID+"/close", "", cookie)
+	w = httptest.NewRecorder()
+	handleCloseRFQ(w, req, rfq.ID)
+	if w.Code != 200 {
+		t.Fatalf("close: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	closed := parseRFQ(w.Body.Bytes())
+	if closed.Status != "closed" {
+		t.Errorf("expected closed status, got %s", closed.Status)
+	}
+}
+
+func TestRFQDashboard(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+	cookie := loginAdmin(t)
+
+	// Create a couple RFQs
+	body := `{"title":"Dash Test 1","lines":[{"ipn":"IPN-001","description":"Resistor","qty":100,"unit":"ea"}],"vendors":[{"vendor_id":"V-001"}]}`
+	req := authedRequest("POST", "/api/v1/rfqs", body, cookie)
+	w := httptest.NewRecorder()
+	handleCreateRFQ(w, req)
+
+	body = `{"title":"Dash Test 2","vendors":[{"vendor_id":"V-001"}]}`
+	req = authedRequest("POST", "/api/v1/rfqs", body, cookie)
+	w = httptest.NewRecorder()
+	handleCreateRFQ(w, req)
+
+	// Get dashboard
+	req = authedRequest("GET", "/api/v1/rfq-dashboard", "", cookie)
+	w = httptest.NewRecorder()
+	handleRFQDashboard(w, req)
+	if w.Code != 200 {
+		t.Fatalf("dashboard: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			OpenRFQs         int `json:"open_rfqs"`
+			PendingResponses int `json:"pending_responses"`
+			RFQs             []struct {
+				ID string `json:"id"`
+			} `json:"rfqs"`
+		}
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.OpenRFQs < 2 {
+		t.Errorf("expected at least 2 open RFQs, got %d", resp.Data.OpenRFQs)
+	}
+	if len(resp.Data.RFQs) < 2 {
+		t.Errorf("expected at least 2 RFQs in list, got %d", len(resp.Data.RFQs))
+	}
+}
+
+func TestRFQEmailBody(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+	cookie := loginAdmin(t)
+
+	body := `{"title":"Email Test","due_date":"2026-03-01","notes":"urgent","lines":[{"ipn":"IPN-001","description":"10k Resistor","qty":1000,"unit":"ea"}]}`
+	req := authedRequest("POST", "/api/v1/rfqs", body, cookie)
+	w := httptest.NewRecorder()
+	handleCreateRFQ(w, req)
+	rfq := parseRFQ(w.Body.Bytes())
+
+	req = authedRequest("GET", "/api/v1/rfqs/"+rfq.ID+"/email", "", cookie)
+	w = httptest.NewRecorder()
+	handleRFQEmailBody(w, req, rfq.ID)
+	if w.Code != 200 {
+		t.Fatalf("email: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Subject string `json:"subject"`
+			Body    string `json:"body"`
+		}
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.Subject == "" {
+		t.Error("expected non-empty subject")
+	}
+	if resp.Data.Body == "" {
+		t.Error("expected non-empty body")
+	}
+	if !contains(resp.Data.Body, "IPN-001") {
+		t.Error("expected body to contain IPN-001")
+	}
+	if !contains(resp.Data.Body, "2026-03-01") {
+		t.Error("expected body to contain due date")
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && containsStr(s, substr)
+}
+func containsStr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRFQAwardPerLine(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+	cookie := loginAdmin(t)
+
+	db.Exec(`INSERT INTO vendors (id, name, status) VALUES ('V-PL1', 'Vendor PL1', 'active')`)
+	db.Exec(`INSERT INTO vendors (id, name, status) VALUES ('V-PL2', 'Vendor PL2', 'active')`)
+
+	body := `{"title":"Per-Line Award","lines":[{"ipn":"IPN-A","description":"Part A","qty":100,"unit":"ea"},{"ipn":"IPN-B","description":"Part B","qty":200,"unit":"ea"}],"vendors":[{"vendor_id":"V-PL1"},{"vendor_id":"V-PL2"}]}`
+	req := authedRequest("POST", "/api/v1/rfqs", body, cookie)
+	w := httptest.NewRecorder()
+	handleCreateRFQ(w, req)
+	rfq := parseRFQ(w.Body.Bytes())
+
+	// Get full details
+	req = authedRequest("GET", "/api/v1/rfqs/"+rfq.ID, "", cookie)
+	w = httptest.NewRecorder()
+	handleGetRFQ(w, req, rfq.ID)
+	rfq = parseRFQ(w.Body.Bytes())
+
+	line1ID := rfq.Lines[0].ID
+	line2ID := rfq.Lines[1].ID
+	vendor1RFQID := rfq.Vendors[0].ID
+	vendor2RFQID := rfq.Vendors[1].ID
+
+	// Add quotes from both vendors for both lines
+	qBody := fmt.Sprintf(`{"rfq_vendor_id":%d,"rfq_line_id":%d,"unit_price":0.05,"lead_time_days":14,"moq":100}`, vendor1RFQID, line1ID)
+	req = authedRequest("POST", "/api/v1/rfqs/"+rfq.ID+"/quotes", qBody, cookie)
+	w = httptest.NewRecorder()
+	handleCreateRFQQuote(w, req, rfq.ID)
+
+	qBody = fmt.Sprintf(`{"rfq_vendor_id":%d,"rfq_line_id":%d,"unit_price":0.03,"lead_time_days":21,"moq":500}`, vendor2RFQID, line2ID)
+	req = authedRequest("POST", "/api/v1/rfqs/"+rfq.ID+"/quotes", qBody, cookie)
+	w = httptest.NewRecorder()
+	handleCreateRFQQuote(w, req, rfq.ID)
+
+	// Award line 1 to V-PL1, line 2 to V-PL2
+	awardBody := fmt.Sprintf(`{"awards":[{"line_id":%d,"vendor_id":"V-PL1"},{"line_id":%d,"vendor_id":"V-PL2"}]}`, line1ID, line2ID)
+	req = authedRequest("POST", "/api/v1/rfqs/"+rfq.ID+"/award-lines", awardBody, cookie)
+	w = httptest.NewRecorder()
+	handleAwardRFQPerLine(w, req, rfq.ID)
+	if w.Code != 200 {
+		t.Fatalf("award-lines: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Status string   `json:"status"`
+			POIDs  []string `json:"po_ids"`
+		}
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.Status != "awarded" {
+		t.Errorf("expected awarded, got %s", resp.Data.Status)
+	}
+	if len(resp.Data.POIDs) != 2 {
+		t.Errorf("expected 2 POs, got %d", len(resp.Data.POIDs))
+	}
+
+	// Verify RFQ status
+	var rfqStatus string
+	db.QueryRow(`SELECT status FROM rfqs WHERE id=?`, rfq.ID).Scan(&rfqStatus)
+	if rfqStatus != "awarded" {
+		t.Errorf("expected awarded, got %s", rfqStatus)
+	}
+}
+
 func TestRFQNotFound(t *testing.T) {
 	cleanup := setupTestDB(t)
 	defer cleanup()

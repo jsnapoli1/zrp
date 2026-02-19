@@ -357,6 +357,22 @@ export interface RFQQuote {
   notes: string;
 }
 
+export interface RFQDashboard {
+  open_rfqs: number;
+  pending_responses: number;
+  awarded_this_month: number;
+  rfqs: {
+    id: string;
+    title: string;
+    status: string;
+    due_date: string;
+    vendor_count: number;
+    response_count: number;
+    line_count: number;
+    total_quoted_value: number;
+  }[];
+}
+
 export interface RFQCompare {
   lines: RFQLine[];
   vendors: RFQVendor[];
@@ -1313,6 +1329,85 @@ class ApiClient {
       body: JSON.stringify(quote),
     });
   }
+
+  async updateRFQQuote(rfqId: string, quoteId: number, quote: Partial<RFQQuote>): Promise<{ status: string }> {
+    return this.request(`/rfqs/${rfqId}/quotes/${quoteId}`, {
+      method: 'PUT',
+      body: JSON.stringify(quote),
+    });
+  }
+
+  async closeRFQ(id: string): Promise<RFQ> {
+    return this.request(`/rfqs/${id}/close`, { method: 'POST' });
+  }
+
+  async getRFQEmailBody(id: string): Promise<{ subject: string; body: string }> {
+    return this.request(`/rfqs/${id}/email`);
+  }
+
+  async awardRFQPerLine(id: string, awards: { line_id: number; vendor_id: string }[]): Promise<{ status: string; po_ids: string[] }> {
+    return this.request(`/rfqs/${id}/award-lines`, {
+      method: 'POST',
+      body: JSON.stringify({ awards }),
+    });
+  }
+
+  async getRFQDashboard(): Promise<RFQDashboard> {
+    return this.request('/rfq-dashboard');
+  }
+}
+
+  // Market Pricing
+  async getMarketPricing(partIPN: string, refresh = false): Promise<MarketPricingResponse> {
+    const qs = refresh ? '?refresh=true' : '';
+    return this.request(`/parts/${partIPN}/market-pricing${qs}`);
+  }
+
+  async updateDigikeySettings(settings: { api_key: string; client_id: string }): Promise<{ status: string }> {
+    return this.request('/settings/digikey', { method: 'POST', body: JSON.stringify(settings) });
+  }
+
+  async updateMouserSettings(settings: { api_key: string }): Promise<{ status: string }> {
+    return this.request('/settings/mouser', { method: 'POST', body: JSON.stringify(settings) });
+  }
+
+  async getDistributorSettings(): Promise<DistributorSettings> {
+    return this.request('/settings/distributors');
+  }
+}
+
+// Market Pricing types
+export interface PriceBreak {
+  qty: number;
+  unit_price: number;
+}
+
+export interface MarketPricingResult {
+  id: number;
+  part_ipn: string;
+  mpn: string;
+  distributor: string;
+  distributor_pn: string;
+  manufacturer: string;
+  description: string;
+  stock_qty: number;
+  lead_time_days: number;
+  currency: string;
+  price_breaks: PriceBreak[];
+  product_url: string;
+  datasheet_url: string;
+  fetched_at: string;
+}
+
+export interface MarketPricingResponse {
+  results: MarketPricingResult[];
+  cached: boolean;
+  error?: string;
+}
+
+export interface DistributorSettings {
+  digikey: { api_key: string; client_id: string };
+  mouser: { api_key: string };
 }
 
 // Export singleton instance

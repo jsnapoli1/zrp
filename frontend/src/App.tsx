@@ -46,10 +46,13 @@ const EmailSettings = React.lazy(() => import("./pages/EmailSettings"));
 const EmailPreferences = React.lazy(() => import("./pages/EmailPreferences"));
 const EmailLog = React.lazy(() => import("./pages/EmailLog"));
 const GitPLMSettings = React.lazy(() => import("./pages/GitPLMSettings"));
+const DistributorSettings = React.lazy(() => import("./pages/DistributorSettings"));
 const Login = React.lazy(() => import("./pages/Login"));
 const Backups = React.lazy(() => import("./pages/Backups"));
 const UndoHistory = React.lazy(() => import("./pages/UndoHistory"));
 const Scan = React.lazy(() => import("./pages/Scan"));
+const RFQs = React.lazy(() => import("./pages/RFQs"));
+const RFQDetail = React.lazy(() => import("./pages/RFQDetail"));
 
 // Placeholder components for other pages
 const PlaceholderPage = ({ title }: { title: string }) => (
@@ -110,6 +113,8 @@ function App() {
             <Route path="/purchase-orders" element={<Procurement />} />
             <Route path="/purchase-orders/:id" element={<PODetail />} />
             <Route path="/procurement" element={<Procurement />} />
+            <Route path="/rfqs" element={<RFQs />} />
+            <Route path="/rfqs/:id" element={<RFQDetail />} />
             <Route path="/receiving" element={<Receiving />} />
             <Route path="/shipments" element={<Shipments />} />
             <Route path="/shipments/:id" element={<ShipmentDetail />} />
@@ -136,6 +141,7 @@ function App() {
             <Route path="/email-preferences" element={<EmailPreferences />} />
             <Route path="/email-log" element={<EmailLog />} />
             <Route path="/gitplm-settings" element={<GitPLMSettings />} />
+            <Route path="/distributor-settings" element={<DistributorSettings />} />
             <Route path="/backups" element={<Backups />} />
             <Route path="/undo-history" element={<UndoHistory />} />
             <Route path="/scan" element={<Scan />} />

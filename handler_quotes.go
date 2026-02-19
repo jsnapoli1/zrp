@@ -60,16 +60,20 @@ func handleCreateQuote(w http.ResponseWriter, r *http.Request) {
 	}
 	q.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "quote", q.ID, "Created "+q.ID+" for "+q.Customer)
+	recordChangeJSON(getUsername(r), "quotes", q.ID, "create", nil, q)
 	jsonResp(w, q)
 }
 
 func handleUpdateQuote(w http.ResponseWriter, r *http.Request, id string) {
+	oldSnap, _ := getQuoteSnapshot(id)
 	var q Quote
 	if err := decodeBody(r, &q); err != nil { jsonErr(w, "invalid body", 400); return }
 	_, err := db.Exec("UPDATE quotes SET customer=?,status=?,notes=?,valid_until=? WHERE id=?",
 		q.Customer, q.Status, q.Notes, q.ValidUntil, id)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "quote", id, "Updated "+id+": status="+q.Status)
+	newSnap, _ := getQuoteSnapshot(id)
+	recordChangeJSON(getUsername(r), "quotes", id, "update", oldSnap, newSnap)
 	handleGetQuote(w, r, id)
 }
 

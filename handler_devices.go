@@ -46,16 +46,20 @@ func handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	d.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "device", d.SerialNumber, "Registered device "+d.SerialNumber)
+	recordChangeJSON(getUsername(r), "devices", d.SerialNumber, "create", nil, d)
 	jsonResp(w, d)
 }
 
 func handleUpdateDevice(w http.ResponseWriter, r *http.Request, serial string) {
+	oldSnap, _ := getDeviceSnapshot(serial)
 	var d Device
 	if err := decodeBody(r, &d); err != nil { jsonErr(w, "invalid body", 400); return }
 	_, err := db.Exec("UPDATE devices SET ipn=?,firmware_version=?,customer=?,location=?,status=?,install_date=?,notes=? WHERE serial_number=?",
 		d.IPN, d.FirmwareVersion, d.Customer, d.Location, d.Status, d.InstallDate, d.Notes, serial)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "device", serial, "Updated device "+serial)
+	newSnap, _ := getDeviceSnapshot(serial)
+	recordChangeJSON(getUsername(r), "devices", serial, "update", oldSnap, newSnap)
 	handleGetDevice(w, r, serial)
 }
 

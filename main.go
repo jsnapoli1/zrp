@@ -432,6 +432,18 @@ func main() {
 		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "gitplm-url" && r.Method == "GET":
 			handleGetGitPLMURL(w, r, parts[1])
 
+		// Market Pricing
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "market-pricing" && r.Method == "GET":
+			handleGetMarketPricing(w, r, parts[1])
+
+		// Distributor Settings
+		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "digikey" && r.Method == "POST":
+			handleUpdateDigikeySettings(w, r)
+		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "mouser" && r.Method == "POST":
+			handleUpdateMouserSettings(w, r)
+		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "distributors" && r.Method == "GET":
+			handleGetDistributorSettings(w, r)
+
 		// Settings/Email aliases
 		case parts[0] == "settings" && len(parts) == 2 && parts[1] == "email" && r.Method == "GET":
 			handleGetEmailConfig(w, r)
@@ -483,8 +495,22 @@ func main() {
 			handleCreateRFQQuote(w, r, parts[1])
 		case parts[0] == "rfqs" && len(parts) == 4 && parts[2] == "quotes" && r.Method == "PUT":
 			handleUpdateRFQQuote(w, r, parts[1], parts[3])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "close" && r.Method == "POST":
+			handleCloseRFQ(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "email" && r.Method == "GET":
+			handleRFQEmailBody(w, r, parts[1])
+		case parts[0] == "rfqs" && len(parts) == 3 && parts[2] == "award-lines" && r.Method == "POST":
+			handleAwardRFQPerLine(w, r, parts[1])
+		case parts[0] == "rfq-dashboard" && len(parts) == 1 && r.Method == "GET":
+			handleRFQDashboard(w, r)
 
-		// Undo
+		// Change History & Undo
+		case parts[0] == "changes" && len(parts) == 2 && parts[1] == "recent" && r.Method == "GET":
+			handleRecentChanges(w, r)
+		case parts[0] == "changes" && len(parts) == 2 && r.Method == "POST":
+			handleUndoChange(w, r, parts[1])
+
+		// Undo (legacy)
 		case parts[0] == "undo" && len(parts) == 1 && r.Method == "GET":
 			handleListUndo(w, r)
 		case parts[0] == "undo" && len(parts) == 2 && r.Method == "POST":

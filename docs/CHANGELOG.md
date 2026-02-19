@@ -2,6 +2,24 @@
 
 All notable changes to ZRP are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.2] - 2026-02-18
+
+### Added
+- Enhanced supplier RFQ workflow with full lifecycle: Draft → Sent → Awarded → Closed
+- Multi-supplier RFQ: send same RFQ to multiple vendors, compare responses side-by-side
+- RFQ line items linked to parts/BOM with per-line vendor quote tracking
+- Per-line award: select winning vendor per line item, auto-creates POs per vendor
+- Whole-RFQ award: award all lines to single vendor with auto PO creation
+- RFQ email body generation for copy-to-clipboard vendor communication
+- RFQ dashboard API with open RFQs, pending responses, and monthly award stats
+- Frontend: RFQ list page with create dialog
+- Frontend: RFQ detail page with tabbed sections (Lines, Vendors, Responses, Compare, Award)
+- Side-by-side vendor comparison matrix view
+- Quote entry dialog with vendor/line item selection
+- RFQ sidebar navigation under Supply Chain
+- API endpoints: close, email, award-lines, rfq-dashboard
+- 11 backend tests covering all RFQ workflows (CRUD, send, close, quotes, compare, award, per-line award, dashboard, email)
+
 ## [0.3.1] - 2026-02-18
 
 ### Fixed

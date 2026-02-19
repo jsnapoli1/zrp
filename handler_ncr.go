@@ -45,11 +45,13 @@ func handleCreateNCR(w http.ResponseWriter, r *http.Request) {
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	n.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "ncr", n.ID, "Created "+n.ID+": "+n.Title)
+	recordChangeJSON(getUsername(r), "ncrs", n.ID, "create", nil, n)
 	go emailOnNCRCreated(n.ID, n.Title)
 	jsonResp(w, n)
 }
 
 func handleUpdateNCR(w http.ResponseWriter, r *http.Request, id string) {
+	oldSnap, _ := getNCRSnapshot(id)
 	var body map[string]interface{}
 	if err := decodeBody(r, &body); err != nil { jsonErr(w, "invalid body", 400); return }
 
@@ -85,6 +87,8 @@ func handleUpdateNCR(w http.ResponseWriter, r *http.Request, id string) {
 		title, description, ipn, serialNumber, defectType, severity, status, rootCause, correctiveAction, resolvedAt, id)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "ncr", id, "Updated "+id+": "+title)
+	newSnap, _ := getNCRSnapshot(id)
+	recordChangeJSON(getUsername(r), "ncrs", id, "update", oldSnap, newSnap)
 
 	// Auto-create linked ECO if resolving with corrective action
 	var linkedECOID string

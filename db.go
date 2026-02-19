@@ -161,6 +161,17 @@ func runMigrations() error {
 			ipn TEXT NOT NULL, description TEXT, qty INTEGER NOT NULL,
 			unit_price REAL, notes TEXT
 		)`,
+		`CREATE TABLE IF NOT EXISTS change_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			table_name TEXT NOT NULL,
+			record_id TEXT NOT NULL,
+			operation TEXT NOT NULL,
+			old_data TEXT,
+			new_data TEXT,
+			user_id TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			undone INTEGER DEFAULT 0
+		)`,
 		`CREATE TABLE IF NOT EXISTS undo_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id TEXT NOT NULL,
@@ -344,6 +355,23 @@ func runMigrations() error {
 		`CREATE TABLE IF NOT EXISTS app_settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS market_pricing (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			part_ipn TEXT NOT NULL,
+			mpn TEXT NOT NULL,
+			distributor TEXT NOT NULL,
+			distributor_pn TEXT DEFAULT '',
+			manufacturer TEXT DEFAULT '',
+			description TEXT DEFAULT '',
+			stock_qty INTEGER DEFAULT 0,
+			lead_time_days INTEGER DEFAULT 0,
+			currency TEXT DEFAULT 'USD',
+			price_breaks TEXT DEFAULT '[]',
+			product_url TEXT DEFAULT '',
+			datasheet_url TEXT DEFAULT '',
+			fetched_at TEXT NOT NULL,
+			UNIQUE(part_ipn, distributor)
 		)`,
 	}
 	for _, t := range tables {

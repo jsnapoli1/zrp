@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -383,6 +385,188 @@ func handleUpdateRFQQuote(w http.ResponseWriter, r *http.Request, rfqID string, 
 	}
 
 	jsonResp(w, map[string]string{"status": "updated"})
+}
+
+func handleCloseRFQ(w http.ResponseWriter, r *http.Request, id string) {
+	var status string
+	err := db.QueryRow(`SELECT status FROM rfqs WHERE id=?`, id).Scan(&status)
+	if err != nil {
+		jsonErr(w, "not found", 404)
+		return
+	}
+	if status != "awarded" && status != "sent" {
+		jsonErr(w, "RFQ must be in awarded or sent status to close", 400)
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	db.Exec(`UPDATE rfqs SET status='closed', updated_at=? WHERE id=?`, now, id)
+	logAudit(db, getUser(r), "close", "rfq", id, "Closed RFQ")
+	handleGetRFQ(w, r, id)
+}
+
+func handleRFQDashboard(w http.ResponseWriter, r *http.Request) {
+	type DashboardRFQ struct {
+		ID               string  `json:"id"`
+		Title            string  `json:"title"`
+		Status           string  `json:"status"`
+		DueDate          string  `json:"due_date"`
+		VendorCount      int     `json:"vendor_count"`
+		ResponseCount    int     `json:"response_count"`
+		LineCount        int     `json:"line_count"`
+		TotalQuotedValue float64 `json:"total_quoted_value"`
+	}
+	type Dashboard struct {
+		OpenRFQs         int            `json:"open_rfqs"`
+		PendingResponses int            `json:"pending_responses"`
+		AwardedThisMonth int            `json:"awarded_this_month"`
+		RFQs             []DashboardRFQ `json:"rfqs"`
+	}
+
+	var dash Dashboard
+
+	// Count open RFQs (draft or sent)
+	db.QueryRow(`SELECT COUNT(*) FROM rfqs WHERE status IN ('draft','sent')`).Scan(&dash.OpenRFQs)
+
+	// Count pending vendor responses
+	db.QueryRow(`SELECT COUNT(*) FROM rfq_vendors WHERE status='pending'`).Scan(&dash.PendingResponses)
+
+	// Awarded this month
+	monthStart := time.Now().Format("2006-01") + "-01"
+	db.QueryRow(`SELECT COUNT(*) FROM rfqs WHERE status='awarded' AND updated_at>=?`, monthStart).Scan(&dash.AwardedThisMonth)
+
+	// Active RFQs with stats
+	rows, err := db.Query(`SELECT r.id, r.title, r.status, COALESCE(r.due_date,''),
+		(SELECT COUNT(*) FROM rfq_vendors WHERE rfq_id=r.id) as vendor_count,
+		(SELECT COUNT(*) FROM rfq_vendors WHERE rfq_id=r.id AND status='quoted') as response_count,
+		(SELECT COUNT(*) FROM rfq_lines WHERE rfq_id=r.id) as line_count,
+		COALESCE((SELECT SUM(rq.unit_price * rl.qty) FROM rfq_quotes rq JOIN rfq_lines rl ON rq.rfq_line_id=rl.id WHERE rq.rfq_id=r.id),0) as total_quoted
+		FROM rfqs r WHERE r.status IN ('draft','sent','awarded')
+		ORDER BY r.created_at DESC`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var d DashboardRFQ
+			rows.Scan(&d.ID, &d.Title, &d.Status, &d.DueDate, &d.VendorCount, &d.ResponseCount, &d.LineCount, &d.TotalQuotedValue)
+			dash.RFQs = append(dash.RFQs, d)
+		}
+	}
+	if dash.RFQs == nil {
+		dash.RFQs = []DashboardRFQ{}
+	}
+
+	jsonResp(w, dash)
+}
+
+func handleRFQEmailBody(w http.ResponseWriter, r *http.Request, id string) {
+	var rfq RFQ
+	err := db.QueryRow(`SELECT id, title, COALESCE(due_date,''), COALESCE(notes,'') FROM rfqs WHERE id=?`, id).
+		Scan(&rfq.ID, &rfq.Title, &rfq.DueDate, &rfq.Notes)
+	if err != nil {
+		jsonErr(w, "not found", 404)
+		return
+	}
+
+	// Load lines
+	lineRows, _ := db.Query(`SELECT ipn, description, qty, unit FROM rfq_lines WHERE rfq_id=?`, id)
+	if lineRows != nil {
+		defer lineRows.Close()
+		for lineRows.Next() {
+			var l RFQLine
+			lineRows.Scan(&l.IPN, &l.Description, &l.Qty, &l.Unit)
+			rfq.Lines = append(rfq.Lines, l)
+		}
+	}
+
+	// Build email body
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Subject: Request for Quote - %s (%s)\n\n", rfq.Title, rfq.ID))
+	sb.WriteString("Dear Vendor,\n\n")
+	sb.WriteString(fmt.Sprintf("We are requesting a quote for the following items (RFQ: %s).\n\n", rfq.ID))
+
+	if rfq.DueDate != "" {
+		sb.WriteString(fmt.Sprintf("Please respond by: %s\n\n", rfq.DueDate))
+	}
+
+	sb.WriteString("Items:\n")
+	sb.WriteString(fmt.Sprintf("%-15s %-30s %10s %6s\n", "Part Number", "Description", "Qty", "Unit"))
+	sb.WriteString(strings.Repeat("-", 65) + "\n")
+	for _, l := range rfq.Lines {
+		sb.WriteString(fmt.Sprintf("%-15s %-30s %10.0f %6s\n", l.IPN, l.Description, l.Qty, l.Unit))
+	}
+
+	sb.WriteString("\nPlease provide:\n")
+	sb.WriteString("- Unit price\n- Lead time\n- Minimum order quantity (MOQ)\n- Any relevant notes or conditions\n\n")
+
+	if rfq.Notes != "" {
+		sb.WriteString(fmt.Sprintf("Additional notes: %s\n\n", rfq.Notes))
+	}
+
+	sb.WriteString("Thank you for your prompt response.\n")
+
+	jsonResp(w, map[string]string{
+		"subject": fmt.Sprintf("Request for Quote - %s (%s)", rfq.Title, rfq.ID),
+		"body":    sb.String(),
+	})
+}
+
+func handleAwardRFQPerLine(w http.ResponseWriter, r *http.Request, id string) {
+	var status string
+	err := db.QueryRow(`SELECT status FROM rfqs WHERE id=?`, id).Scan(&status)
+	if err != nil {
+		jsonErr(w, "not found", 404)
+		return
+	}
+
+	var body struct {
+		Awards []struct {
+			LineID   int    `json:"line_id"`
+			VendorID string `json:"vendor_id"`
+		} `json:"awards"`
+	}
+	if err := decodeBody(r, &body); err != nil || len(body.Awards) == 0 {
+		jsonErr(w, "awards array required", 400)
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+
+	// Group awards by vendor to create POs
+	vendorLines := make(map[string][]int) // vendor_id -> []line_id
+	for _, a := range body.Awards {
+		vendorLines[a.VendorID] = append(vendorLines[a.VendorID], a.LineID)
+	}
+
+	var poIDs []string
+	for vendorID, lineIDs := range vendorLines {
+		poID := nextID("PO", "purchase_orders", 4)
+		db.Exec(`INSERT INTO purchase_orders (id, vendor_id, status, notes, created_at) VALUES (?,?,?,?,?)`,
+			poID, vendorID, "draft", "Auto-created from "+id+" (per-line award)", now)
+
+		// Find rfq_vendor_id for this vendor
+		var rfqVendorID int
+		db.QueryRow(`SELECT id FROM rfq_vendors WHERE rfq_id=? AND vendor_id=?`, id, vendorID).Scan(&rfqVendorID)
+
+		for _, lineID := range lineIDs {
+			var ipn string
+			var qty float64
+			var unitPrice float64
+			db.QueryRow(`SELECT rl.ipn, rl.qty, COALESCE(rq.unit_price,0) FROM rfq_lines rl
+				LEFT JOIN rfq_quotes rq ON rq.rfq_line_id=rl.id AND rq.rfq_vendor_id=?
+				WHERE rl.id=?`, rfqVendorID, lineID).Scan(&ipn, &qty, &unitPrice)
+			db.Exec(`INSERT INTO po_lines (po_id, ipn, qty_ordered, unit_price) VALUES (?,?,?,?)`,
+				poID, ipn, qty, unitPrice)
+		}
+		poIDs = append(poIDs, poID)
+	}
+
+	db.Exec(`UPDATE rfqs SET status='awarded', updated_at=? WHERE id=?`, now, id)
+	logAudit(db, getUser(r), "award_per_line", "rfq", id, fmt.Sprintf("Per-line award, created POs: %v", poIDs))
+
+	jsonResp(w, map[string]interface{}{
+		"status": "awarded",
+		"po_ids": poIDs,
+	})
 }
 
 // getUser extracts the username from the request context/session

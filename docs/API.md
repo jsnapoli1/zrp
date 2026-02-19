@@ -1756,3 +1756,102 @@ Restore an entity from its snapshot. Removes the undo entry after successful res
 - Delete responses include `undo_id` when a snapshot was created
 - The frontend shows a 5-second toast with an "Undo" button after destructive actions
 - Undo history is accessible from the user dropdown menu → "Undo History"
+
+---
+
+## RFQs (Requests for Quote)
+
+### List RFQs
+`GET /api/v1/rfqs`
+
+### Get RFQ
+`GET /api/v1/rfqs/:id`
+
+Returns RFQ with nested `lines`, `vendors`, and `quotes`.
+
+### Create RFQ
+`POST /api/v1/rfqs`
+
+```json
+{
+  "title": "Resistor Bulk Quote",
+  "due_date": "2026-03-01",
+  "notes": "Need pricing for Q2",
+  "lines": [{"ipn": "IPN-001", "description": "10k Resistor", "qty": 100, "unit": "ea"}],
+  "vendors": [{"vendor_id": "V-001"}, {"vendor_id": "V-002"}]
+}
+```
+
+### Update RFQ
+`PUT /api/v1/rfqs/:id`
+
+### Delete RFQ
+`DELETE /api/v1/rfqs/:id`
+
+### Send RFQ
+`POST /api/v1/rfqs/:id/send`
+
+Transitions status from `draft` → `sent`. Returns 400 if not in draft.
+
+### Close RFQ
+`POST /api/v1/rfqs/:id/close`
+
+Transitions from `awarded` or `sent` → `closed`.
+
+### Award RFQ (whole)
+`POST /api/v1/rfqs/:id/award`
+
+```json
+{"vendor_id": "V-001"}
+```
+
+Awards entire RFQ to one vendor, auto-creates PO. Returns `{"status": "awarded", "po_id": "PO-2026-0001"}`.
+
+### Award RFQ Per Line
+`POST /api/v1/rfqs/:id/award-lines`
+
+```json
+{
+  "awards": [
+    {"line_id": 1, "vendor_id": "V-001"},
+    {"line_id": 2, "vendor_id": "V-002"}
+  ]
+}
+```
+
+Awards individual lines to different vendors, creates one PO per vendor. Returns `{"status": "awarded", "po_ids": ["PO-...", "PO-..."]}`.
+
+### Compare RFQ Quotes
+`GET /api/v1/rfqs/:id/compare`
+
+Returns side-by-side comparison matrix: `{lines, vendors, matrix}` where matrix is `{line_id: {vendor_id: {unit_price, lead_time_days, moq, notes}}}`.
+
+### Add Quote
+`POST /api/v1/rfqs/:id/quotes`
+
+```json
+{"rfq_vendor_id": 1, "rfq_line_id": 1, "unit_price": 0.05, "lead_time_days": 14, "moq": 100, "notes": ""}
+```
+
+### Update Quote
+`PUT /api/v1/rfqs/:id/quotes/:quoteId`
+
+### Generate Email Body
+`GET /api/v1/rfqs/:id/email`
+
+Returns `{subject, body}` with a formatted RFQ email for sending to vendors.
+
+### RFQ Dashboard
+`GET /api/v1/rfq-dashboard`
+
+Returns `{open_rfqs, pending_responses, awarded_this_month, rfqs: [{id, title, status, due_date, vendor_count, response_count, line_count, total_quoted_value}]}`.
+
+### RFQ Lifecycle
+
+```
+Draft → Sent → Awarded → Closed
+                 ↑
+          (quotes added)
+```
+
+Statuses: `draft`, `sent`, `awarded`, `closed`

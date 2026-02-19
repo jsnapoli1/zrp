@@ -59,10 +59,12 @@ func handleCreateWorkOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	wo.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "workorder", wo.ID, "Created WO "+wo.ID+" for "+wo.AssemblyIPN)
+	recordChangeJSON(getUsername(r), "work_orders", wo.ID, "create", nil, wo)
 	jsonResp(w, wo)
 }
 
 func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
+	oldSnap, _ := getWorkOrderSnapshot(id)
 	var wo WorkOrder
 	if err := decodeBody(r, &wo); err != nil {
 		jsonErr(w, "invalid body", 400)
@@ -76,6 +78,8 @@ func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	logAudit(db, getUsername(r), "updated", "workorder", id, "Updated WO "+id+": status="+wo.Status)
+	newSnap, _ := getWorkOrderSnapshot(id)
+	recordChangeJSON(getUsername(r), "work_orders", id, "update", oldSnap, newSnap)
 	go emailOnOverdueWorkOrder(id)
 	handleGetWorkOrder(w, r, id)
 }

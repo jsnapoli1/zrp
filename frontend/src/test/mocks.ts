@@ -245,5 +245,10 @@ export function createMockApi() {
     awardRFQ: vi.fn().mockResolvedValue({ status: "awarded", po_id: "PO-2026-0001" }),
     compareRFQ: vi.fn().mockResolvedValue({ lines: [], vendors: [], matrix: {} }),
     createRFQQuote: vi.fn().mockResolvedValue({ id: 1, rfq_id: "RFQ-2026-0001", rfq_vendor_id: 1, rfq_line_id: 1, unit_price: 0.05, lead_time_days: 14, moq: 100, notes: "" }),
+    updateRFQQuote: vi.fn().mockResolvedValue({ status: "updated" }),
+    closeRFQ: vi.fn().mockResolvedValue({ ...mockRFQs[0], status: "closed" }),
+    getRFQEmailBody: vi.fn().mockResolvedValue({ subject: "RFQ Email", body: "Dear Vendor..." }),
+    awardRFQPerLine: vi.fn().mockResolvedValue({ status: "awarded", po_ids: ["PO-2026-0001"] }),
+    getRFQDashboard: vi.fn().mockResolvedValue({ open_rfqs: 2, pending_responses: 3, awarded_this_month: 1, rfqs: [] }),
   };
 }

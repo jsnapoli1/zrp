@@ -94,10 +94,12 @@ func handleCreateECO(w http.ResponseWriter, r *http.Request) {
 	e.CreatedAt = now; e.UpdatedAt = now; e.CreatedBy = "engineer"
 	ensureInitialRevision(e.ID, "engineer", now)
 	logAudit(db, getUsername(r), "created", "eco", e.ID, "Created "+e.ID+": "+e.Title)
+	recordChangeJSON(getUsername(r), "ecos", e.ID, "create", nil, e)
 	jsonResp(w, e)
 }
 
 func handleUpdateECO(w http.ResponseWriter, r *http.Request, id string) {
+	oldSnap, _ := getECOSnapshot(id)
 	var e ECO
 	if err := decodeBody(r, &e); err != nil { jsonErr(w, "invalid body", 400); return }
 	now := time.Now().Format("2006-01-02 15:04:05")
@@ -105,6 +107,8 @@ func handleUpdateECO(w http.ResponseWriter, r *http.Request, id string) {
 		e.Title, e.Description, e.Status, e.Priority, e.AffectedIPNs, now, id)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "eco", id, "Updated "+id+": "+e.Title)
+	newSnap, _ := getECOSnapshot(id)
+	recordChangeJSON(getUsername(r), "ecos", id, "update", oldSnap, newSnap)
 	handleGetECO(w, r, id)
 }
 

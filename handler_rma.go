@@ -43,10 +43,12 @@ func handleCreateRMA(w http.ResponseWriter, r *http.Request) {
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	rm.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "rma", rm.ID, "Created "+rm.ID+": "+rm.Reason)
+	recordChangeJSON(getUsername(r), "rmas", rm.ID, "create", nil, rm)
 	jsonResp(w, rm)
 }
 
 func handleUpdateRMA(w http.ResponseWriter, r *http.Request, id string) {
+	oldSnap, _ := getRMASnapshot(id)
 	var rm RMA
 	if err := decodeBody(r, &rm); err != nil { jsonErr(w, "invalid body", 400); return }
 	now := time.Now().Format("2006-01-02 15:04:05")
@@ -57,5 +59,7 @@ func handleUpdateRMA(w http.ResponseWriter, r *http.Request, id string) {
 		rm.SerialNumber, rm.Customer, rm.Reason, rm.Status, rm.DefectDescription, rm.Resolution, receivedAt, resolvedAt, id)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "rma", id, "Updated "+id+": status="+rm.Status)
+	newSnap, _ := getRMASnapshot(id)
+	recordChangeJSON(getUsername(r), "rmas", id, "update", oldSnap, newSnap)
 	handleGetRMA(w, r, id)
 }

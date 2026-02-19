@@ -13,7 +13,9 @@ import {
   DollarSign,
   Layers,
   Info,
-  GitBranch
+  GitBranch,
+  RefreshCw,
+  Store
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -24,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-import { api, type Part, type BOMNode, type PartCost, type WhereUsedEntry } from "../lib/api";
+import { api, type Part, type BOMNode, type PartCost, type WhereUsedEntry, type MarketPricingResult } from "../lib/api";
 import { useGitPLM } from "../hooks/useGitPLM";
 import { ExternalLink } from "lucide-react";
 
@@ -152,6 +154,9 @@ function PartDetail() {
   const [costLoading, setCostLoading] = useState(false);
   const [whereUsed, setWhereUsed] = useState<WhereUsedEntry[]>([]);
   const [whereUsedLoading, setWhereUsedLoading] = useState(false);
+  const [marketPricing, setMarketPricing] = useState<MarketPricingResult[]>([]);
+  const [marketPricingLoading, setMarketPricingLoading] = useState(false);
+  const [marketPricingCached, setMarketPricingCached] = useState(false);
   const { configured: gitplmConfigured, buildUrl: gitplmUrl } = useGitPLM();
 
   useEffect(() => {
@@ -197,6 +202,11 @@ function PartDetail() {
 
       // Load where-used
       fetchWhereUsed();
+
+      // Load market pricing if part has MPN
+      if (detailedPart.mpn) {
+        fetchMarketPricing(false);
+      }
     } catch (error) {
       console.error("Failed to fetch part details:", error);
     } finally {
@@ -242,6 +252,20 @@ function PartDetail() {
       console.error("Failed to fetch where-used:", error);
     } finally {
       setWhereUsedLoading(false);
+    }
+  };
+
+  const fetchMarketPricing = async (refresh: boolean) => {
+    if (!ipn) return;
+    setMarketPricingLoading(true);
+    try {
+      const data = await api.getMarketPricing(decodeURIComponent(ipn), refresh);
+      setMarketPricing(data.results || []);
+      setMarketPricingCached(data.cached || false);
+    } catch (error) {
+      console.error("Failed to fetch market pricing:", error);
+    } finally {
+      setMarketPricingLoading(false);
     }
   };
 
@@ -481,6 +505,100 @@ function PartDetail() {
               <div className="text-center py-8 text-muted-foreground">
                 <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>No BOM data available for this assembly</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Market Pricing */}
+      {part?.mpn && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center">
+                <Store className="h-5 w-5 mr-2" />
+                Market Pricing
+                {marketPricingCached && (
+                  <Badge variant="secondary" className="ml-2 text-xs">Cached</Badge>
+                )}
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchMarketPricing(true)}
+                disabled={marketPricingLoading}
+                data-testid="refresh-market-pricing"
+              >
+                <RefreshCw className={`h-4 w-4 mr-1 ${marketPricingLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {marketPricingLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 w-full" />
+                ))}
+              </div>
+            ) : marketPricing.length > 0 ? (
+              <div className="space-y-4">
+                {marketPricing.map((result, idx) => (
+                  <div key={idx} className="border rounded-md p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="font-semibold">{result.distributor}</h4>
+                        <p className="text-sm text-muted-foreground font-mono">{result.distributor_pn}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm">
+                          Stock: <span className={`font-semibold ${result.stock_qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {result.stock_qty.toLocaleString()}
+                          </span>
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Lead time: {result.lead_time_days} days
+                        </p>
+                      </div>
+                    </div>
+                    {result.price_breaks && result.price_breaks.length > 0 && (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Qty</TableHead>
+                            <TableHead className="text-right">Unit Price</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {result.price_breaks.map((pb, pbIdx) => (
+                            <TableRow key={pbIdx}>
+                              <TableCell>{pb.qty.toLocaleString()}+</TableCell>
+                              <TableCell className="text-right font-mono">
+                                ${pb.unit_price.toFixed(4)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                    {result.product_url && (
+                      <a
+                        href={result.product_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline mt-2 inline-block"
+                      >
+                        View on {result.distributor} →
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Store className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No market pricing available</p>
               </div>
             )}
           </CardContent>

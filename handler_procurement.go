@@ -62,16 +62,20 @@ func handleCreatePO(w http.ResponseWriter, r *http.Request) {
 	}
 	p.CreatedAt = now
 	logAudit(db, getUsername(r), "created", "po", p.ID, "Created PO "+p.ID)
+	recordChangeJSON(getUsername(r), "purchase_orders", p.ID, "create", nil, p)
 	jsonResp(w, p)
 }
 
 func handleUpdatePO(w http.ResponseWriter, r *http.Request, id string) {
+	oldSnap, _ := getPOSnapshot(id)
 	var p PurchaseOrder
 	if err := decodeBody(r, &p); err != nil { jsonErr(w, "invalid body", 400); return }
 	_, err := db.Exec("UPDATE purchase_orders SET vendor_id=?,status=?,notes=?,expected_date=? WHERE id=?",
 		p.VendorID, p.Status, p.Notes, p.ExpectedDate, id)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	logAudit(db, getUsername(r), "updated", "po", id, "Updated PO "+id)
+	newSnap, _ := getPOSnapshot(id)
+	recordChangeJSON(getUsername(r), "purchase_orders", id, "update", oldSnap, newSnap)
 	handleGetPO(w, r, id)
 }
 

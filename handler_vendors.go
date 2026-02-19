@@ -50,10 +50,14 @@ func handleCreateVendor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logAudit(db, getUsername(r), "created", "vendor", v.ID, "Created vendor "+v.Name)
+	recordChangeJSON(getUsername(r), "vendors", v.ID, "create", nil, v)
 	jsonResp(w, v)
 }
 
 func handleUpdateVendor(w http.ResponseWriter, r *http.Request, id string) {
+	// Snapshot old data before update
+	oldSnap, _ := getVendorSnapshot(id)
+
 	var v Vendor
 	if err := decodeBody(r, &v); err != nil {
 		jsonErr(w, "invalid body", 400)
@@ -66,10 +70,15 @@ func handleUpdateVendor(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	logAudit(db, getUsername(r), "updated", "vendor", id, "Updated vendor "+v.Name)
+	newSnap, _ := getVendorSnapshot(id)
+	recordChangeJSON(getUsername(r), "vendors", id, "update", oldSnap, newSnap)
 	handleGetVendor(w, r, id)
 }
 
 func handleDeleteVendor(w http.ResponseWriter, r *http.Request, id string) {
+	// Snapshot for change_history
+	oldSnap, _ := getVendorSnapshot(id)
+
 	undoID, _ := createUndoEntry(getUsername(r), "delete", "vendor", id)
 	_, err := db.Exec("DELETE FROM vendors WHERE id=?", id)
 	if err != nil {
@@ -77,9 +86,13 @@ func handleDeleteVendor(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	logAudit(db, getUsername(r), "deleted", "vendor", id, "Deleted vendor "+id)
+	changeID, _ := recordChangeJSON(getUsername(r), "vendors", id, "delete", oldSnap, nil)
 	resp := map[string]interface{}{"deleted": id}
 	if undoID > 0 {
 		resp["undo_id"] = undoID
+	}
+	if changeID > 0 {
+		resp["change_id"] = changeID
 	}
 	jsonResp(w, resp)
 }
