@@ -304,4 +304,101 @@ describe("WorkOrderDetail", () => {
 
     expect(screen.getByText("Update Status")).toBeDisabled();
   });
+
+  it("status change error path — logs error on reject", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockUpdateWorkOrder.mockRejectedValueOnce(new Error("Server error"));
+    render(<WorkOrderDetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Change Status")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Change Status"));
+    await waitFor(() => {
+      expect(screen.getByText("Select new status")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Select new status"));
+    await waitFor(() => {
+      expect(screen.getByText("In Progress")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("In Progress"));
+    fireEvent.click(screen.getByText("Update Status"));
+    await waitFor(() => {
+      expect(mockUpdateWorkOrder).toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to update status:", expect.any(Error));
+    });
+    consoleSpy.mockRestore();
+  });
+
+  it("generate PO error path — logs error on reject", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockGeneratePOFromWorkOrder.mockRejectedValueOnce(new Error("PO generation failed"));
+    render(<WorkOrderDetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Generate PO")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Generate PO"));
+    await waitFor(() => {
+      expect(screen.getByText("Select vendor for PO")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Select vendor for PO"));
+    await waitFor(() => {
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Acme Corp"));
+    const generateButtons = screen.getAllByText("Generate PO");
+    fireEvent.click(generateButtons[generateButtons.length - 1]);
+    await waitFor(() => {
+      expect(mockGeneratePOFromWorkOrder).toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to generate PO:", expect.any(Error));
+    });
+    consoleSpy.mockRestore();
+  });
+
+  it("does not show Change Status for cancelled work order", async () => {
+    mockGetWorkOrder.mockResolvedValueOnce({
+      id: "WO-010", assembly_ipn: "IPN-001", qty: 1, status: "cancelled", priority: "low", created_at: "2024-01-01",
+    });
+    render(<WorkOrderDetail />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-010")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Change Status")).not.toBeInTheDocument();
+  });
+
+  it("Generate PO button disabled when no vendor selected", async () => {
+    render(<WorkOrderDetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Generate PO")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Generate PO"));
+    await waitFor(() => {
+      expect(screen.getByText("Generate Purchase Order")).toBeInTheDocument();
+    });
+    // The submit Generate PO button in footer should be disabled
+    const generateButtons = screen.getAllByText("Generate PO");
+    const submitButton = generateButtons[generateButtons.length - 1];
+    expect(submitButton).toBeDisabled();
+  });
+
+  it("renders started_at and completed_at when present", async () => {
+    mockGetWorkOrder.mockResolvedValueOnce({
+      id: "WO-002", assembly_ipn: "IPN-003", qty: 5, status: "completed", priority: "high",
+      created_at: "2024-01-10", started_at: "2024-01-11T09:00:00Z", completed_at: "2024-01-15T17:00:00Z",
+    });
+    render(<WorkOrderDetail />);
+    await waitFor(() => {
+      expect(screen.getByText("Started")).toBeInTheDocument();
+      expect(screen.getByText("Completed")).toBeInTheDocument();
+    });
+  });
+
+  it("does not render Started/Completed labels when dates not set", async () => {
+    // Default mockWO has no started_at or completed_at
+    render(<WorkOrderDetail />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Started")).not.toBeInTheDocument();
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+  });
 });

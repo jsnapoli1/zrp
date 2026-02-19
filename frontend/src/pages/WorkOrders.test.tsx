@@ -226,4 +226,82 @@ describe("WorkOrders", () => {
       expect(screen.getByText("100")).toBeInTheDocument();
     });
   });
+
+  it("priority select interaction in create form", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/assembly ipn/i)).toBeInTheDocument();
+    });
+    // Default is "Medium" — change to "Critical" via the select
+    fireEvent.click(screen.getByText("Medium"));
+    await waitFor(() => {
+      expect(screen.getByText("Critical")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Critical"));
+    // Fill IPN and submit to verify priority is sent
+    fireEvent.change(screen.getByLabelText(/assembly ipn/i), { target: { value: "IPN-001" } });
+    const createButtons = screen.getAllByText("Create Work Order");
+    fireEvent.click(createButtons[createButtons.length - 1]);
+    await waitFor(() => {
+      expect(mockCreateWorkOrder).toHaveBeenCalledWith(expect.objectContaining({
+        priority: "critical",
+      }));
+    });
+  });
+
+  it("quantity field edge cases — parseInt fallback to 1", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Create Work Order"));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/quantity/i)).toBeInTheDocument();
+    });
+    const qtyInput = screen.getByLabelText(/quantity/i);
+
+    // qty=0 → parseInt("0") is 0, which is falsy, so || 1 → 1
+    fireEvent.change(qtyInput, { target: { value: "0" } });
+    expect(qtyInput).toHaveValue(1);
+
+    // negative → parseInt("-3") is -3, truthy, stays -3
+    fireEvent.change(qtyInput, { target: { value: "-3" } });
+    expect(qtyInput).toHaveValue(-3);
+
+    // NaN → parseInt("abc") is NaN, falsy, so || 1 → 1
+    fireEvent.change(qtyInput, { target: { value: "abc" } });
+    expect(qtyInput).toHaveValue(1);
+  });
+
+  it("View Details links have correct /work-orders/{id} URLs", async () => {
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("WO-001")).toBeInTheDocument();
+    });
+    const viewLinks = screen.getAllByText("View Details");
+    expect(viewLinks[0].closest("a")).toHaveAttribute("href", "/work-orders/WO-001");
+    expect(viewLinks[1].closest("a")).toHaveAttribute("href", "/work-orders/WO-002");
+    expect(viewLinks[2].closest("a")).toHaveAttribute("href", "/work-orders/WO-003");
+  });
+
+  it("renders cancelled and on_hold status badges", async () => {
+    mockGetWorkOrders.mockResolvedValueOnce([
+      { id: "WO-010", assembly_ipn: "IPN-001", qty: 1, status: "cancelled", priority: "low", created_at: "2024-01-01" },
+      { id: "WO-011", assembly_ipn: "IPN-002", qty: 2, status: "on_hold", priority: "medium", created_at: "2024-01-02" },
+    ]);
+    render(<WorkOrders />);
+    await waitFor(() => {
+      expect(screen.getByText("CANCELLED")).toBeInTheDocument();
+      expect(screen.getByText("ON HOLD")).toBeInTheDocument();
+    });
+    // Verify styling classes
+    const cancelledBadge = screen.getByText("CANCELLED");
+    expect(cancelledBadge).toHaveClass("text-red-700");
+    const onHoldBadge = screen.getByText("ON HOLD");
+    expect(onHoldBadge).toHaveClass("text-orange-700");
+  });
 });
