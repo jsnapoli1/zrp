@@ -48,8 +48,8 @@ func handleListModules(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/permissions/me — get current user's permissions
 func handleMyPermissions(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(ctxRole).(string)
-	if role == "" {
-		// Bearer token — return all permissions
+	if role == "" || role == "admin" {
+		// Bearer token OR admin — return all permissions
 		var allPerms []Permission
 		for _, mod := range AllModules {
 			for _, act := range AllActions {
