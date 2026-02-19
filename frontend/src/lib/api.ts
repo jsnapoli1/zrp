@@ -519,6 +519,32 @@ class ApiClient {
       throw new Error(body.error || `API error: ${response.statusText}`);
     }
 
+    const json = await response.json();
+    // Auto-unwrap {data: ...} envelope from backend
+    if (json && typeof json === 'object' && 'data' in json) {
+      return json.data as T;
+    }
+    return json as T;
+  }
+
+  /** Like request(), but returns the full envelope including meta */
+  private async requestWithMeta<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    const url = `${API_BASE}${endpoint}`;
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+      ...options,
+    });
+    if (!response.ok) {
+      if (response.status === 401 && !endpoint.includes('/auth/')) {
+        window.location.href = '/login';
+        throw new Error('Session expired');
+      }
+      const errBody = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errBody.error || `API error: ${response.statusText}`);
+    }
     return response.json();
   }
 
@@ -554,7 +580,7 @@ class ApiClient {
     if (params?.limit) searchParams.set('limit', params.limit.toString());
     
     const url = `/parts${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
-    return this.request(url);
+    return this.requestWithMeta(url);
   }
 
   async getPart(ipn: string): Promise<Part> {

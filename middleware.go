@@ -35,15 +35,9 @@ func requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Exempt paths
-		if path == "/" ||
-			path == "/login" ||
-			strings.HasPrefix(path, "/assets/") ||
-			path == "/auth/login" ||
-			path == "/auth/logout" ||
-			path == "/auth/me" ||
-			strings.HasPrefix(path, "/files/") ||
-			path == "/vite.svg" ||
+		// Exempt paths: all non-API routes (SPA handles its own auth),
+		// plus specific API endpoints that don't require auth
+		if !strings.HasPrefix(path, "/api/") ||
 			path == "/api/v1/openapi.json" {
 			next.ServeHTTP(w, r)
 			return

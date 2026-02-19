@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { AppLayout } from "./layouts/AppLayout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // Lazy load all pages for code-splitting
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
@@ -77,6 +78,7 @@ function App() {
   return (
     <Router>
       <Toaster position="bottom-right" richColors closeButton />
+      <ErrorBoundary>
       <WebSocketProvider>
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
@@ -150,6 +152,7 @@ function App() {
         </Routes>
       </Suspense>
       </WebSocketProvider>
+      </ErrorBoundary>
     </Router>
   );
 }

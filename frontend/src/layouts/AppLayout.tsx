@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGlobalUndo } from "../hooks/useUndo";
 import { useWS } from "../contexts/WebSocketContext";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
@@ -270,7 +271,9 @@ export function AppLayout() {
 
           {/* Main Content Area */}
           <main className="flex-1 overflow-y-auto p-6">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </main>
         </div>
 
