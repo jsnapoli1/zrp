@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -16,6 +16,11 @@ function FirmwareDetail() {
   const [campaign, setCampaign] = useState<FirmwareCampaign | null>(null);
   const [devices, setDevices] = useState<CampaignDevice[]>([]);
   const [loading, setLoading] = useState(true);
+  const campaignRef = useRef<FirmwareCampaign | null>(null);
+
+  useEffect(() => {
+    campaignRef.current = campaign;
+  }, [campaign]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -40,13 +45,13 @@ function FirmwareDetail() {
 
     // Poll for updates every 5 seconds if campaign is running
     const interval = setInterval(() => {
-      if (campaign?.status === "running") {
+      if (campaignRef.current?.status === "running") {
         fetchData();
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [id, campaign?.status]);
+  }, [id]);
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -149,19 +154,40 @@ function FirmwareDetail() {
         </div>
         <div className="flex gap-2">
           {campaign.status === "running" ? (
-            <Button variant="outline">
+            <Button variant="outline" onClick={async () => {
+              try {
+                const updated = await api.updateFirmwareCampaign(campaign.id, { status: "paused" });
+                setCampaign(updated);
+              } catch (error) {
+                console.error("Failed to pause campaign:", error);
+              }
+            }}>
               <Pause className="h-4 w-4 mr-2" />
               Pause Campaign
             </Button>
           ) : campaign.status === "paused" || campaign.status === "draft" ? (
-            <Button>
+            <Button onClick={async () => {
+              try {
+                const updated = await api.updateFirmwareCampaign(campaign.id, { status: "running" });
+                setCampaign(updated);
+              } catch (error) {
+                console.error("Failed to start campaign:", error);
+              }
+            }}>
               <Play className="h-4 w-4 mr-2" />
               Start Campaign
             </Button>
           ) : null}
           
           {campaign.status === "failed" && (
-            <Button variant="outline">
+            <Button variant="outline" onClick={async () => {
+              try {
+                const updated = await api.updateFirmwareCampaign(campaign.id, { status: "running" });
+                setCampaign(updated);
+              } catch (error) {
+                console.error("Failed to retry campaign:", error);
+              }
+            }}>
               <RotateCcw className="h-4 w-4 mr-2" />
               Retry Failed
             </Button>

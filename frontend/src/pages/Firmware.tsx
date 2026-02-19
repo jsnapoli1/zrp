@@ -269,11 +269,27 @@ function Firmware() {
                       <TableCell>
                         <div className="flex gap-1">
                           {campaign.status === "running" ? (
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const updated = await api.updateFirmwareCampaign(campaign.id, { status: "paused" });
+                                setCampaigns(campaigns.map(c => c.id === campaign.id ? updated : c));
+                              } catch (error) {
+                                console.error("Failed to pause campaign:", error);
+                              }
+                            }}>
                               <Pause className="h-3 w-3" />
                             </Button>
                           ) : campaign.status === "paused" || campaign.status === "draft" ? (
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const updated = await api.updateFirmwareCampaign(campaign.id, { status: "running" });
+                                setCampaigns(campaigns.map(c => c.id === campaign.id ? updated : c));
+                              } catch (error) {
+                                console.error("Failed to start campaign:", error);
+                              }
+                            }}>
                               <Play className="h-3 w-3" />
                             </Button>
                           ) : null}

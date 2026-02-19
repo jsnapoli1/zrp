@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { mockFirmwareCampaigns } from "../test/mocks";
 import type { FirmwareCampaign, CampaignDevice } from "../lib/api";
 
 const mockNavigate = vi.fn();
@@ -12,11 +11,13 @@ vi.mock("react-router-dom", async () => {
 
 const mockGetFirmwareCampaign = vi.fn();
 const mockGetCampaignDevices = vi.fn();
+const mockUpdateFirmwareCampaign = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
     getFirmwareCampaign: (...args: any[]) => mockGetFirmwareCampaign(...args),
     getCampaignDevices: (...args: any[]) => mockGetCampaignDevices(...args),
+    updateFirmwareCampaign: (...args: any[]) => mockUpdateFirmwareCampaign(...args),
   },
 }));
 
@@ -351,5 +352,73 @@ describe("FirmwareDetail", () => {
     await waitFor(() => {
       expect(screen.getByText("Not specified")).toBeInTheDocument();
     });
+  });
+
+  // Bug 2: Action button handlers
+  it("calls API to pause a running campaign", async () => {
+    mockUpdateFirmwareCampaign.mockResolvedValueOnce({ ...runningCampaign, status: "paused" });
+    renderWithRoute();
+    await waitFor(() => screen.getByText("Pause Campaign"));
+    fireEvent.click(screen.getByText("Pause Campaign"));
+    await waitFor(() => {
+      expect(mockUpdateFirmwareCampaign).toHaveBeenCalledWith("FW-001", { status: "paused" });
+    });
+  });
+
+  it("calls API to start a paused campaign", async () => {
+    mockGetFirmwareCampaign.mockResolvedValue(pausedCampaign);
+    mockUpdateFirmwareCampaign.mockResolvedValueOnce({ ...pausedCampaign, status: "running" });
+    renderWithRoute("FW-004");
+    await waitFor(() => screen.getByText("Start Campaign"));
+    fireEvent.click(screen.getByText("Start Campaign"));
+    await waitFor(() => {
+      expect(mockUpdateFirmwareCampaign).toHaveBeenCalledWith("FW-004", { status: "running" });
+    });
+  });
+
+  it("calls API to start a draft campaign", async () => {
+    mockGetFirmwareCampaign.mockResolvedValue(draftCampaign);
+    mockUpdateFirmwareCampaign.mockResolvedValueOnce({ ...draftCampaign, status: "running" });
+    renderWithRoute("FW-005");
+    await waitFor(() => screen.getByText("Start Campaign"));
+    fireEvent.click(screen.getByText("Start Campaign"));
+    await waitFor(() => {
+      expect(mockUpdateFirmwareCampaign).toHaveBeenCalledWith("FW-005", { status: "running" });
+    });
+  });
+
+  it("calls API to retry a failed campaign", async () => {
+    mockGetFirmwareCampaign.mockResolvedValue(failedCampaign);
+    mockUpdateFirmwareCampaign.mockResolvedValueOnce({ ...failedCampaign, status: "running" });
+    renderWithRoute("FW-003");
+    await waitFor(() => screen.getByText("Retry Failed"));
+    fireEvent.click(screen.getByText("Retry Failed"));
+    await waitFor(() => {
+      expect(mockUpdateFirmwareCampaign).toHaveBeenCalledWith("FW-003", { status: "running" });
+    });
+  });
+
+  // Bug 3: Polling uses ref, so it polls when status is running
+  it("polls for updates when campaign is running", async () => {
+    renderWithRoute();
+    await waitFor(() => screen.getByText("Security Update Q1"));
+    // Initial fetch: 1 call each
+    expect(mockGetFirmwareCampaign).toHaveBeenCalledTimes(1);
+    // Advance 5 seconds to trigger poll
+    await vi.advanceTimersByTimeAsync(5000);
+    await waitFor(() => {
+      expect(mockGetFirmwareCampaign).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("does not poll when campaign is not running", async () => {
+    mockGetFirmwareCampaign.mockResolvedValue(completedCampaign);
+    mockGetCampaignDevices.mockResolvedValue([]);
+    renderWithRoute("FW-002");
+    await waitFor(() => screen.getByText("Completed Update"));
+    const callCount = mockGetFirmwareCampaign.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000);
+    // Should not have made additional calls
+    expect(mockGetFirmwareCampaign).toHaveBeenCalledTimes(callCount);
   });
 });

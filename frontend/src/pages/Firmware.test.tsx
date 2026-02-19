@@ -12,11 +12,13 @@ vi.mock("react-router-dom", async () => {
 
 const mockGetFirmwareCampaigns = vi.fn().mockResolvedValue(mockFirmwareCampaigns);
 const mockCreateFirmwareCampaign = vi.fn().mockResolvedValue(mockFirmwareCampaigns[0]);
+const mockUpdateFirmwareCampaign = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
     getFirmwareCampaigns: (...args: any[]) => mockGetFirmwareCampaigns(...args),
     createFirmwareCampaign: (...args: any[]) => mockCreateFirmwareCampaign(...args),
+    updateFirmwareCampaign: (...args: any[]) => mockUpdateFirmwareCampaign(...args),
   },
 }));
 
@@ -238,5 +240,41 @@ describe("Firmware", () => {
     await waitFor(() => {
       expect(screen.queryByText("Loading firmware campaigns...")).not.toBeInTheDocument();
     });
+  });
+
+  it("calls API to pause a running campaign and does not navigate", async () => {
+    const runningCampaigns: FirmwareCampaign[] = [
+      { id: "FW-R", name: "Running", version: "2.0.0", category: "", status: "running", target_filter: "", notes: "", created_at: "2024-01-25" },
+    ];
+    mockGetFirmwareCampaigns.mockResolvedValueOnce(runningCampaigns);
+    mockUpdateFirmwareCampaign.mockResolvedValueOnce({ ...runningCampaigns[0], status: "paused" });
+    render(<Firmware />);
+    await waitFor(() => screen.getByText("FW-R"));
+    mockNavigate.mockClear();
+    // The pause button is the first button in the actions cell (has Pause icon)
+    const pauseBtn = screen.getByRole("row", { name: /FW-R/ }).querySelector("button");
+    fireEvent.click(pauseBtn!);
+    await waitFor(() => {
+      expect(mockUpdateFirmwareCampaign).toHaveBeenCalledWith("FW-R", { status: "paused" });
+    });
+    // Should NOT navigate (stopPropagation)
+    expect(mockNavigate).not.toHaveBeenCalledWith("/firmware/FW-R");
+  });
+
+  it("calls API to start a paused campaign and does not navigate", async () => {
+    const pausedCampaigns: FirmwareCampaign[] = [
+      { id: "FW-P", name: "Paused", version: "1.0.0", category: "", status: "paused", target_filter: "", notes: "", created_at: "2024-01-25" },
+    ];
+    mockGetFirmwareCampaigns.mockResolvedValueOnce(pausedCampaigns);
+    mockUpdateFirmwareCampaign.mockResolvedValueOnce({ ...pausedCampaigns[0], status: "running" });
+    render(<Firmware />);
+    await waitFor(() => screen.getByText("FW-P"));
+    mockNavigate.mockClear();
+    const playBtn = screen.getByRole("row", { name: /FW-P/ }).querySelector("button");
+    fireEvent.click(playBtn!);
+    await waitFor(() => {
+      expect(mockUpdateFirmwareCampaign).toHaveBeenCalledWith("FW-P", { status: "running" });
+    });
+    expect(mockNavigate).not.toHaveBeenCalledWith("/firmware/FW-P");
   });
 });
