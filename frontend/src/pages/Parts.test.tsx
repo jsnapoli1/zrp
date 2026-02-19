@@ -296,4 +296,134 @@ describe("Parts", () => {
       );
     });
   });
+
+  it("category filter calls getParts with category param", async () => {
+    render(<Parts />);
+    await waitForLoad();
+    mockGetParts.mockClear();
+    // Find the category select trigger (the one inside the Filters card)
+    const filtersCard = screen.getByText("Filters").closest("[class*='card']")!;
+    const selectTrigger = filtersCard.querySelector('[role="combobox"]')!;
+    fireEvent.click(selectTrigger);
+    await waitFor(() => expect(screen.getByText("Resistors (50)")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Resistors (50)"));
+    await waitFor(() => {
+      expect(mockGetParts).toHaveBeenCalledWith(
+        expect.objectContaining({ category: "resistors", page: 1 })
+      );
+    });
+  });
+
+  it("reset button clears search, category, and page", async () => {
+    mockGetParts.mockResolvedValue({ data: mockParts, meta: { total: 100, page: 1, limit: 50 } });
+    render(<Parts />);
+    await waitForLoad();
+    // Set search
+    const searchInput = screen.getByPlaceholderText(/search parts by ipn/i);
+    fireEvent.change(searchInput, { target: { value: "test" } });
+    await waitFor(() => expect(mockGetParts).toHaveBeenCalledWith(expect.objectContaining({ q: "test" })));
+    // Go to page 2
+    fireEvent.click(screen.getByText("Next"));
+    await waitFor(() => expect(mockGetParts).toHaveBeenCalledWith(expect.objectContaining({ page: 2 })));
+    mockGetParts.mockClear();
+    // Click reset (the RotateCcw button)
+    const resetButton = screen.getByRole("button", { name: "" });
+    // Find reset button - it's the outline button with no text
+    const buttons = screen.getAllByRole("button");
+    const resetBtn = buttons.find(b => b.querySelector('svg.lucide-rotate-ccw') || b.querySelector('[class*="rotate"]'));
+    if (resetBtn) fireEvent.click(resetBtn);
+    else {
+      // Fallback: find button with RotateCcw icon by its variant
+      const outlineBtns = buttons.filter(b => b.textContent === '' || b.textContent?.trim() === '');
+      fireEvent.click(outlineBtns[0]);
+    }
+    await waitFor(() => {
+      expect(mockGetParts).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 1, limit: 50 })
+      );
+      // Should NOT have q or category params
+      const lastCall = mockGetParts.mock.calls[mockGetParts.mock.calls.length - 1][0];
+      expect(lastCall.q).toBeUndefined();
+      expect(lastCall.category).toBeUndefined();
+    });
+    // Search input should be cleared
+    expect(searchInput).toHaveValue("");
+  });
+
+  it("create part error keeps dialog open", async () => {
+    mockCreatePart.mockRejectedValue(new Error("Server error"));
+    render(<Parts />);
+    await waitForLoad();
+    fireEvent.click(screen.getByText("Add Part"));
+    await waitFor(() => expect(screen.getByLabelText("IPN *")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("IPN *"), { target: { value: "FAIL-001" } });
+    fireEvent.click(screen.getByText("Create Part"));
+    await waitFor(() => {
+      expect(mockCreatePart).toHaveBeenCalled();
+    });
+    // Dialog should still be open after error
+    expect(screen.getByText("Add New Part")).toBeInTheDocument();
+    expect(screen.getByLabelText("IPN *")).toBeInTheDocument();
+  });
+
+  it("create part with all fields sends correct payload types", async () => {
+    render(<Parts />);
+    await waitForLoad();
+    fireEvent.click(screen.getByText("Add Part"));
+    await waitFor(() => expect(screen.getByLabelText("IPN *")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("IPN *"), { target: { value: "FULL-001" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Full test part" } });
+    fireEvent.change(screen.getByLabelText("Cost ($)"), { target: { value: "12.50" } });
+    fireEvent.change(screen.getByLabelText("Price ($)"), { target: { value: "25.99" } });
+    fireEvent.change(screen.getByLabelText("Current Stock"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Location"), { target: { value: "Bin A3" } });
+    fireEvent.change(screen.getByLabelText("Vendor"), { target: { value: "Acme Corp" } });
+    fireEvent.click(screen.getByText("Create Part"));
+    await waitFor(() => {
+      expect(mockCreatePart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ipn: "FULL-001",
+          description: "Full test part",
+          cost: 12.50,
+          price: 25.99,
+          current_stock: 100,
+          location: "Bin A3",
+          vendor: "Acme Corp",
+        })
+      );
+    });
+    // Verify types
+    const payload = mockCreatePart.mock.calls[0][0];
+    expect(typeof payload.cost).toBe("number");
+    expect(typeof payload.price).toBe("number");
+    expect(typeof payload.current_stock).toBe("number");
+  });
+
+  it("displayParts extracts fields from alternative field names", async () => {
+    const altParts: any[] = [
+      {
+        ipn: "ALT-001",
+        created_at: "2024-01-01",
+        updated_at: "2024-01-01",
+        fields: {
+          _category: "Sensors",
+          desc: "Temperature sensor",
+          qty_on_hand: "42",
+          status: "active",
+          cost: "3.25",
+        },
+      },
+    ];
+    mockGetParts.mockResolvedValue({ data: altParts, meta: { total: 1, page: 1, limit: 50 } });
+    render(<Parts />);
+    await waitFor(() => expect(screen.getByText("ALT-001")).toBeInTheDocument());
+    // _category should display as "Sensors"
+    expect(screen.getByText("Sensors")).toBeInTheDocument();
+    // desc should display as description
+    expect(screen.getByText("Temperature sensor")).toBeInTheDocument();
+    // qty_on_hand=42 should show as stock
+    expect(screen.getByText("42")).toBeInTheDocument();
+    // cost should render as $3.25
+    expect(screen.getByText("$3.25")).toBeInTheDocument();
+  });
 });
