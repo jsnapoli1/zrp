@@ -6,7 +6,8 @@ import {
   FileText,
   Clock,
   CheckCircle,
-  Building
+  Building,
+  Printer
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -249,6 +250,12 @@ function PODetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to={`/purchase-orders/${id}/print`}>
+              <Printer className="h-4 w-4 mr-2" />
+              Print PO
+            </Link>
+          </Button>
           {canChangeStatus() && (
             <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
               <DialogTrigger asChild>

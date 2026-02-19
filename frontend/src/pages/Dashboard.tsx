@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useWSSubscription } from "../contexts/WebSocketContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { 
@@ -85,63 +86,67 @@ function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const [dashboardData, chartsData] = await Promise.all([
-          api.getDashboard(),
-          api.getDashboardCharts(),
-        ]);
-        
-        // Extend the dashboard data with additional stats
-        const extendedStats: ExtendedDashboardStats = {
-          ...dashboardData,
-          open_ecos: chartsData?.eco_counts?.reduce((a: number, b: number) => a + b, 0) || 0,
-          open_pos: 12, // Mock data - replace with real API call
-          open_ncrs: 5, // Mock data - replace with real API call  
-          total_devices: 150, // Mock data - replace with real API call
-          open_rmas: 3, // Mock data - replace with real API call
-        };
-        
-        setStats(extendedStats);
-        
-        // Mock activity data - replace with real API call
-        setActivities([
-          {
-            id: "1",
-            type: "ECO",
-            description: "New ECO created: Widget Improvement v2.1",
-            timestamp: "2 hours ago",
-            user: "John Doe",
-          },
-          {
-            id: "2",
-            type: "Work Order",
-            description: "Work Order WO-001 completed",
-            timestamp: "4 hours ago",
-            user: "Jane Smith",
-          },
-          {
-            id: "3",
-            type: "Inventory",
-            description: "Low stock alert for part ABC-123",
-            timestamp: "6 hours ago",
-            user: "System",
-          },
-        ]);
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-    
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchDashboardData, 30000);
-    return () => clearInterval(interval);
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      const [dashboardData, chartsData] = await Promise.all([
+        api.getDashboard(),
+        api.getDashboardCharts(),
+      ]);
+      
+      // Extend the dashboard data with additional stats
+      const extendedStats: ExtendedDashboardStats = {
+        ...dashboardData,
+        open_ecos: chartsData?.eco_counts?.reduce((a: number, b: number) => a + b, 0) || 0,
+        open_pos: 12, // Mock data - replace with real API call
+        open_ncrs: 5, // Mock data - replace with real API call  
+        total_devices: 150, // Mock data - replace with real API call
+        open_rmas: 3, // Mock data - replace with real API call
+      };
+      
+      setStats(extendedStats);
+      
+      // Mock activity data - replace with real API call
+      setActivities([
+        {
+          id: "1",
+          type: "ECO",
+          description: "New ECO created: Widget Improvement v2.1",
+          timestamp: "2 hours ago",
+          user: "John Doe",
+        },
+        {
+          id: "2",
+          type: "Work Order",
+          description: "Work Order WO-001 completed",
+          timestamp: "4 hours ago",
+          user: "Jane Smith",
+        },
+        {
+          id: "3",
+          type: "Inventory",
+          description: "Low stock alert for part ABC-123",
+          timestamp: "6 hours ago",
+          user: "System",
+        },
+      ]);
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Real-time updates via WebSocket instead of 30-second polling
+  useWSSubscription(
+    ["*"],
+    useCallback(() => {
+      fetchDashboardData();
+    }, [fetchDashboardData])
+  );
 
   if (loading) {
     return (

@@ -42,6 +42,12 @@ func checkLoginRateLimit(ip string) bool {
 	return true
 }
 
+func resetLoginRateLimit() {
+	loginLimiter.Lock()
+	loginLimiter.attempts = make(map[string][]time.Time)
+	loginLimiter.Unlock()
+}
+
 func getClientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		return fwd

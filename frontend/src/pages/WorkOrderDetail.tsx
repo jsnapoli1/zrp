@@ -8,7 +8,8 @@ import {
   Clock,
   Play,
   Settings2,
-  ShoppingCart
+  ShoppingCart,
+  Printer
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -297,6 +298,12 @@ function WorkOrderDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to={`/work-orders/${id}/print`}>
+              <Printer className="h-4 w-4 mr-2" />
+              Print Traveler
+            </Link>
+          </Button>
           {canChangeStatus() && (
             <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
               <DialogTrigger asChild>

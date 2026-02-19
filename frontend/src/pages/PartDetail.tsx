@@ -12,8 +12,18 @@ import {
   ChevronRight,
   DollarSign,
   Layers,
-  Info
+  Info,
+  GitBranch
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { api, type Part, type BOMNode, type PartCost, type WhereUsedEntry } from "../lib/api";
 
 interface PartWithDetails extends Part {
@@ -124,6 +134,8 @@ function PartDetail() {
   const [loading, setLoading] = useState(true);
   const [bomLoading, setBomLoading] = useState(false);
   const [costLoading, setCostLoading] = useState(false);
+  const [whereUsed, setWhereUsed] = useState<WhereUsedEntry[]>([]);
+  const [whereUsedLoading, setWhereUsedLoading] = useState(false);
 
   useEffect(() => {
     if (ipn) {
@@ -165,6 +177,9 @@ function PartDetail() {
 
       // Load cost information
       fetchCost();
+
+      // Load where-used
+      fetchWhereUsed();
     } catch (error) {
       console.error("Failed to fetch part details:", error);
     } finally {
@@ -197,6 +212,19 @@ function PartDetail() {
       console.error("Failed to fetch cost data:", error);
     } finally {
       setCostLoading(false);
+    }
+  };
+
+  const fetchWhereUsed = async () => {
+    if (!ipn) return;
+    setWhereUsedLoading(true);
+    try {
+      const data = await api.getPartWhereUsed(decodeURIComponent(ipn));
+      setWhereUsed(data);
+    } catch (error) {
+      console.error("Failed to fetch where-used:", error);
+    } finally {
+      setWhereUsedLoading(false);
     }
   };
 
@@ -433,6 +461,68 @@ function PartDetail() {
           </CardContent>
         </Card>
       )}
+
+      {/* Where Used */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <GitBranch className="h-5 w-5 mr-2" />
+            Where Used
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {whereUsedLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : whereUsed.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Assembly</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Qty Per</TableHead>
+                  <TableHead>Reference</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {whereUsed.map((entry, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      <Link
+                        to={`/parts/${encodeURIComponent(entry.assembly_ipn)}`}
+                        className="font-mono text-blue-600 hover:underline"
+                      >
+                        {entry.assembly_ipn}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {entry.description || "—"}
+                    </TableCell>
+                    <TableCell className="text-right">{entry.qty}</TableCell>
+                    <TableCell>
+                      {entry.ref ? (
+                        <Badge variant="secondary" className="text-xs">
+                          {entry.ref}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <GitBranch className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>This part is not used in any assemblies</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

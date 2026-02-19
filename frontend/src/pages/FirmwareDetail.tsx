@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -9,6 +9,7 @@ import { Separator } from "../components/ui/separator";
 import { Label } from "../components/ui/label";
 import { Cpu, ArrowLeft, Play, Pause, RotateCcw } from "lucide-react";
 import { api, type FirmwareCampaign, type CampaignDevice } from "../lib/api";
+import { useWSSubscription } from "../contexts/WebSocketContext";
 
 function FirmwareDetail() {
   const { id } = useParams<{ id: string }>();
@@ -42,16 +43,26 @@ function FirmwareDetail() {
     };
 
     fetchData();
-
-    // Poll for updates every 5 seconds if campaign is running
-    const interval = setInterval(() => {
-      if (campaignRef.current?.status === "running") {
-        fetchData();
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [id]);
+
+  // Real-time updates via WebSocket instead of 5-second polling
+  const refetchCampaign = useCallback(() => {
+    if (!id) return;
+    Promise.all([
+      api.getFirmwareCampaign(id),
+      api.getCampaignDevices(id),
+    ]).then(([c, d]) => {
+      setCampaign(c);
+      setDevices(d);
+    }).catch(console.error);
+  }, [id]);
+
+  useWSSubscription(
+    ["firmware_campaign_updated", "firmware_campaign_created", "device_updated"],
+    useCallback(() => {
+      refetchCampaign();
+    }, [refetchCampaign])
+  );
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {

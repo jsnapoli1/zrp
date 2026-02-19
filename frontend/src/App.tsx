@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { AppLayout } from "./layouts/AppLayout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
+import { WebSocketProvider } from "./contexts/WebSocketContext";
 
 // Lazy load all pages for code-splitting
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
@@ -19,6 +20,8 @@ const Vendors = React.lazy(() => import("./pages/Vendors"));
 const VendorDetail = React.lazy(() => import("./pages/VendorDetail"));
 const WorkOrders = React.lazy(() => import("./pages/WorkOrders"));
 const WorkOrderDetail = React.lazy(() => import("./pages/WorkOrderDetail"));
+const WorkOrderPrint = React.lazy(() => import("./pages/WorkOrderPrint"));
+const POPrint = React.lazy(() => import("./pages/POPrint"));
 const NCRs = React.lazy(() => import("./pages/NCRs"));
 const NCRDetail = React.lazy(() => import("./pages/NCRDetail"));
 const RMAs = React.lazy(() => import("./pages/RMAs"));
@@ -30,11 +33,13 @@ const Firmware = React.lazy(() => import("./pages/Firmware"));
 const FirmwareDetail = React.lazy(() => import("./pages/FirmwareDetail"));
 const Quotes = React.lazy(() => import("./pages/Quotes"));
 const QuoteDetail = React.lazy(() => import("./pages/QuoteDetail"));
+const Receiving = React.lazy(() => import("./pages/Receiving"));
 const Reports = React.lazy(() => import("./pages/Reports"));
 const Audit = React.lazy(() => import("./pages/Audit"));
 const Users = React.lazy(() => import("./pages/Users"));
 const APIKeys = React.lazy(() => import("./pages/APIKeys"));
 const EmailSettings = React.lazy(() => import("./pages/EmailSettings"));
+const Login = React.lazy(() => import("./pages/Login"));
 const Backups = React.lazy(() => import("./pages/Backups"));
 
 // Placeholder components for other pages
@@ -59,8 +64,13 @@ const PlaceholderPage = ({ title }: { title: string }) => (
 function App() {
   return (
     <Router>
+      <WebSocketProvider>
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
+          <Route path="/login" element={<Login />} />
+          {/* Print routes - outside AppLayout for clean printing */}
+          <Route path="/work-orders/:id/print" element={<WorkOrderPrint />} />
+          <Route path="/purchase-orders/:id/print" element={<POPrint />} />
           <Route path="/" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
@@ -89,6 +99,7 @@ function App() {
             <Route path="/purchase-orders" element={<Procurement />} />
             <Route path="/purchase-orders/:id" element={<PODetail />} />
             <Route path="/procurement" element={<Procurement />} />
+            <Route path="/receiving" element={<Receiving />} />
             
             {/* Manufacturing */}
             <Route path="/work-orders" element={<WorkOrders />} />
@@ -114,6 +125,7 @@ function App() {
           </Route>
         </Routes>
       </Suspense>
+      </WebSocketProvider>
     </Router>
   );
 }

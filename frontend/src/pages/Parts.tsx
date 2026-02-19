@@ -40,6 +40,7 @@ import {
   Plus
 } from "lucide-react";
 import { api, type Part, type Category, type ApiResponse } from "../lib/api";
+import { ConfigurableTable, type ColumnDef } from "../components/ConfigurableTable";
 
 interface PartWithFields extends Part {
   category?: string;
@@ -223,6 +224,53 @@ function Parts() {
       } as PartWithFields;
     });
   }, [parts]);
+
+  const partsColumns: ColumnDef<PartWithFields>[] = [
+    {
+      id: "ipn",
+      label: "IPN",
+      accessor: (part) => <span className="font-mono font-medium">{part.ipn}</span>,
+      defaultVisible: true,
+    },
+    {
+      id: "category",
+      label: "Category",
+      accessor: (part) => <Badge variant="secondary" className="capitalize">{part.category}</Badge>,
+      defaultVisible: true,
+    },
+    {
+      id: "description",
+      label: "Description",
+      accessor: (part) => <span className="max-w-xs truncate block">{part.description || "No description"}</span>,
+      defaultVisible: true,
+    },
+    {
+      id: "cost",
+      label: "Cost",
+      accessor: (part) => part.cost ? `$${part.cost.toFixed(2)}` : "—",
+      className: "text-right",
+      headerClassName: "text-right",
+      defaultVisible: true,
+    },
+    {
+      id: "stock",
+      label: "Stock",
+      accessor: (part) => part.stock !== undefined ? part.stock.toString() : "—",
+      className: "text-right",
+      headerClassName: "text-right",
+      defaultVisible: true,
+    },
+    {
+      id: "status",
+      label: "Status",
+      accessor: (part) => (
+        <Badge variant={part.status === "active" ? "default" : "secondary"}>
+          {part.status || "active"}
+        </Badge>
+      ),
+      defaultVisible: true,
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -435,62 +483,18 @@ function Parts() {
             </div>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>IPN</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayParts.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        {searchQuery || selectedCategory !== "all" 
-                          ? "No parts found matching your criteria" 
-                          : "No parts available"}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    displayParts.map((part) => (
-                      <TableRow 
-                        key={part.ipn}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => handleRowClick(part.ipn)}
-                      >
-                        <TableCell className="font-mono font-medium">
-                          {part.ipn}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="capitalize">
-                            {part.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {part.description || 'No description'}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {part.cost ? `$${part.cost.toFixed(2)}` : '-'}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {part.stock !== undefined ? part.stock.toString() : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={part.status === 'active' ? 'default' : 'secondary'}
-                          >
-                            {part.status || 'active'}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <ConfigurableTable<PartWithFields>
+                tableName="parts"
+                columns={partsColumns}
+                data={displayParts}
+                rowKey={(part) => part.ipn}
+                onRowClick={(part) => handleRowClick(part.ipn)}
+                emptyMessage={
+                  searchQuery || selectedCategory !== "all"
+                    ? "No parts found matching your criteria"
+                    : "No parts available"
+                }
+              />
 
               {/* Pagination */}
               {totalPages > 1 && (

@@ -37,6 +37,7 @@ func requireAuth(next http.Handler) http.Handler {
 
 		// Exempt paths
 		if path == "/" ||
+			path == "/login" ||
 			strings.HasPrefix(path, "/assets/") ||
 			path == "/auth/login" ||
 			path == "/auth/logout" ||

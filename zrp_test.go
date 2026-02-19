@@ -29,6 +29,7 @@ func setupTestDB(t *testing.T) func() {
 // loginAdmin logs in as admin and returns the session cookie
 func loginAdmin(t *testing.T) *http.Cookie {
 	t.Helper()
+	resetLoginRateLimit()
 	body := `{"username":"admin","password":"changeme"}`
 	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -1117,3 +1118,149 @@ func TestIpnCategory(t *testing.T) {
 	}
 }
 
+
+// --- Delete User Tests ---
+
+func TestDeleteUser(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	cookie := loginAdmin(t)
+
+	// Create a user first
+	body := `{"username":"deletetest","password":"test123","role":"user"}`
+	req := authedRequest("POST", "/api/v1/users", body, cookie)
+	w := httptest.NewRecorder()
+	handleCreateUser(w, req)
+	if w.Code != 201 {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	// createUser returns {id, username, ...} directly (no data wrapper)
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	// Response may be wrapped in "data" or direct
+	idVal := resp["id"]
+	if idVal == nil {
+		if data, ok := resp["data"].(map[string]interface{}); ok {
+			idVal = data["id"]
+		}
+	}
+	id := fmt.Sprintf("%.0f", idVal.(float64))
+
+	// Delete the user
+	req = authedRequest("DELETE", "/api/v1/users/"+id, "", cookie)
+	w = httptest.NewRecorder()
+	handleDeleteUser(w, req, id)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteUserSelf(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	cookie := loginAdmin(t)
+
+	// Try to delete self (admin is id=1)
+	req := authedRequest("DELETE", "/api/v1/users/1", "", cookie)
+	w := httptest.NewRecorder()
+	handleDeleteUser(w, req, "1")
+	if w.Code != 400 {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// --- Audit Log Pagination Tests ---
+
+func TestAuditLogPagination(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Insert some audit entries
+	for i := 0; i < 5; i++ {
+		logAudit(db, "admin", "test_action", "test_module", fmt.Sprintf("rec_%d", i), fmt.Sprintf("Test entry %d", i))
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/audit?limit=2&page=1", nil)
+	w := httptest.NewRecorder()
+	handleAuditLog(w, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	entries := resp["entries"].([]interface{})
+	total := int(resp["total"].(float64))
+
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(entries))
+	}
+	if total != 5 {
+		t.Errorf("expected total 5, got %d", total)
+	}
+}
+
+func TestAuditLogSearch(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	logAudit(db, "admin", "created", "parts", "IPN-001", "Created part IPN-001")
+	logAudit(db, "user1", "updated", "ecos", "ECO-001", "Updated ECO")
+
+	req := httptest.NewRequest("GET", "/api/v1/audit?search=IPN-001", nil)
+	w := httptest.NewRecorder()
+	handleAuditLog(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	entries := resp["entries"].([]interface{})
+	if len(entries) != 1 {
+		t.Errorf("expected 1 entry matching search, got %d", len(entries))
+	}
+}
+
+func TestAuditLogEntityType(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	logAudit(db, "admin", "created", "parts", "IPN-001", "Created part")
+	logAudit(db, "admin", "created", "ecos", "ECO-001", "Created ECO")
+
+	req := httptest.NewRequest("GET", "/api/v1/audit?entity_type=parts", nil)
+	w := httptest.NewRecorder()
+	handleAuditLog(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	entries := resp["entries"].([]interface{})
+	if len(entries) != 1 {
+		t.Errorf("expected 1 entry for entity_type=parts, got %d", len(entries))
+	}
+}
+
+// --- Email Test with test_email field ---
+
+func TestEmailTestWithTestEmailField(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Set up email config
+	db.Exec(`INSERT OR REPLACE INTO email_config (id, smtp_host, smtp_port, smtp_user, smtp_password, from_address, from_name, enabled) VALUES (1, 'smtp.test.com', 587, 'user', 'pass', 'from@test.com', 'ZRP', 1)`)
+
+	// Mock SMTP
+	SMTPSendFunc = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		return nil
+	}
+	defer func() { SMTPSendFunc = smtp.SendMail }()
+
+	cookie := loginAdmin(t)
+	body := `{"test_email":"recipient@test.com"}`
+	req := authedRequest("POST", "/api/v1/email/test", body, cookie)
+	w := httptest.NewRecorder()
+	handleTestEmail(w, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
