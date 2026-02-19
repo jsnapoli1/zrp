@@ -142,9 +142,9 @@ describe("Documents", () => {
     await waitFor(() => screen.getByText("Create Document"));
     fireEvent.click(screen.getByText("Create Document"));
     await waitFor(() => {
-      expect(screen.getByText("Title")).toBeInTheDocument();
-      expect(screen.getByText("Category")).toBeInTheDocument();
-      expect(screen.getByText("Content")).toBeInTheDocument();
+      expect(screen.getByText("Create New Document")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Enter document title...")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Enter document content...")).toBeInTheDocument();
     });
   });
 

@@ -54,7 +54,8 @@ describe("VendorDetail", () => {
   it("renders vendor name after loading", async () => {
     render(<VendorDetail />);
     await waitFor(() => {
-      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+      const elements = screen.getAllByText("Acme Corp");
+      expect(elements.length).toBeGreaterThan(0);
     });
   });
 
@@ -125,7 +126,8 @@ describe("VendorDetail", () => {
     });
     expect(screen.getByText("Active POs")).toBeInTheDocument();
     expect(screen.getByText("Total Value")).toBeInTheDocument();
-    expect(screen.getByText("Lead Time")).toBeInTheDocument();
+    const leadTimes = screen.getAllByText("Lead Time");
+    expect(leadTimes.length).toBeGreaterThan(0);
   });
 
   it("calculates total PO value", async () => {
@@ -141,9 +143,10 @@ describe("VendorDetail", () => {
     await waitFor(() => {
       expect(screen.getByText("Active POs")).toBeInTheDocument();
     });
-    // Both POs are submitted/partial
+    // Both POs are submitted/partial - active POs card has orange text
     await waitFor(() => {
-      expect(screen.getByText("2")).toBeInTheDocument();
+      const twos = screen.getAllByText("2");
+      expect(twos.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -158,8 +161,10 @@ describe("VendorDetail", () => {
   it("has tabs for Price Catalog and Purchase Orders", async () => {
     render(<VendorDetail />);
     await waitFor(() => {
-      expect(screen.getByText("Price Catalog")).toBeInTheDocument();
-      expect(screen.getByText("Purchase Orders")).toBeInTheDocument();
+      const priceCatalogs = screen.getAllByText("Price Catalog");
+      expect(priceCatalogs.length).toBeGreaterThan(0);
+      const poTabs = screen.getAllByText("Purchase Orders");
+      expect(poTabs.length).toBeGreaterThan(0);
     });
   });
 

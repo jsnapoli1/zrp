@@ -150,13 +150,16 @@ describe("Calendar", () => {
     });
   });
 
-  it("shows event type badges", async () => {
+  it("shows event type badges for selected date", async () => {
     render(<Calendar />);
     await waitFor(() => screen.getByText("15"));
     fireEvent.click(screen.getByText("15"));
     await waitFor(() => {
-      expect(screen.getByText("Work Order")).toBeInTheDocument();
-      expect(screen.getByText("Purchase Order")).toBeInTheDocument();
+      // Legend already shows these, so there should be more after clicking a date with events
+      const woLabels = screen.getAllByText("Work Order");
+      expect(woLabels.length).toBeGreaterThanOrEqual(2); // 1 legend + 1 event badge
+      const poLabels = screen.getAllByText("Purchase Order");
+      expect(poLabels.length).toBeGreaterThanOrEqual(2);
     });
   });
 
