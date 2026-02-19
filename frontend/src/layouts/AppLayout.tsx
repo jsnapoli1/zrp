@@ -94,7 +94,6 @@ const navigationItems = [
       { title: "Vendors", url: "/vendors", icon: Building2 },
       { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
       { title: "RFQs", url: "/rfqs", icon: TrendingUp },
-      { title: "Procurement", url: "/procurement", icon: TrendingUp },
       { title: "Shipments", url: "/shipments", icon: TrendingUp },
     ],
   },
