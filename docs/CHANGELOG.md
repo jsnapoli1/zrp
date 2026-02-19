@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+### Added - Comprehensive Integration Test Documentation (2026-02-19)
+
+**Context:** Following the initial integration test planning, conducted a deep audit of ZRP's test coverage to identify the highest-value improvements needed for production readiness.
+
+**Key Findings:**
+- **Unit test coverage:** Excellent (1,136 frontend + 40 backend test files, all passing)
+- **Integration test coverage:** Missing entirely for cross-module workflows
+- **Highest risk:** Bugs at module boundaries (BOM→Procurement, WO→Inventory, NCR→ECO)
+
+**Created:** `docs/INTEGRATION_TESTS_NEEDED.md` - Implementation guide containing:
+
+1. **Current Test Coverage Assessment:**
+   - Detailed breakdown of what's well-tested vs. missing
+   - Identified 7 critical workflow gaps (3x P0, 4x P1)
+
+2. **Critical Integration Test Cases (Fully Specified):**
+   - **TC-INT-001:** BOM Shortage → PO → Inventory (P0)
+   - **TC-INT-002:** WO Completion → Inventory Update (P0)
+   - **TC-INT-003:** Material Reservation on WO Creation (P0)
+   - **TC-INT-004:** NCR → ECO → Implementation (P1)
+   - **TC-INT-005:** WO Scrap/Yield Tracking (P1)
+   - **TC-INT-006:** Partial PO Receiving (P1)
+
+3. **Implementation Roadmap:**
+   - Phase 1: Documentation (✅ COMPLETE)
+   - Phase 2: Test infrastructure setup (NEXT)
+   - Phase 3: Fix critical gaps (after tests surface them)
+   - Phase 4: Expand coverage long-term
+
+4. **Testing Best Practices:**
+   - ✅ DO: Use real database, test edge cases, document gaps explicitly
+   - ❌ DON'T: Mock everything, test only happy path, ignore known gaps
+
+**Documented Known Gaps (Cross-Referenced):**
+- 🔴 **GAP #4.5:** WO completion doesn't update inventory (P0 BLOCKER)
+- 🔴 **GAP #4.1:** Material reservation not implemented (P0 BLOCKER)
+- 🔴 **GAP #3.1:** PO receiving → inventory update unclear (P0 FRAGILE)
+- ⚠️ **GAP #9.1:** URL-param based linking (NCR→ECO/CAPA) instead of DB relations (P1)
+- 🔴 **GAP #8.1:** No sales order module - quote workflow incomplete (P0 BLOCKER)
+
+**Success Criteria Defined:**
+- Target: 5 P0 integration tests passing
+- Target: 4 P0 workflow gaps fixed
+- Target: Integration tests in CI pipeline
+
+**Impact:**
+- Provides actionable roadmap for achieving production readiness
+- Documents exact expected behavior for all critical workflows
+- Establishes testing standards for future development
+- Surfaces the 3 highest-priority features needed: inventory auto-update, material reservation, sales orders
+
+**Recommendation:** Implement Phase 2 (test infrastructure) immediately to surface exact gaps, then systematically fix P0 blockers.
+
+---
+
 ### Added - Integration Test Planning (2026-02-19)
 
 **Context:** ZRP has excellent unit test coverage (1,224 frontend tests + 40 backend test files, all passing), but integration tests for cross-module workflows were missing. This creates risk for regressions when modules interact.
