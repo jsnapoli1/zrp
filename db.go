@@ -711,6 +711,11 @@ func runMigrations() error {
 		}
 	}
 
+	// Initialize advanced search tables
+	if err := InitSearchTables(db); err != nil {
+		log.Printf("Search tables migration warning: %v", err)
+	}
+
 	return nil
 }
 

@@ -123,6 +123,22 @@ func main() {
 		case parts[0] == "search" && len(parts) == 1 && r.Method == "GET":
 			handleGlobalSearch(w, r)
 
+		// Advanced Search
+		case parts[0] == "search" && parts[1] == "advanced" && r.Method == "POST":
+			requireAuth(http.HandlerFunc(handleAdvancedSearch)).ServeHTTP(w, r)
+		case parts[0] == "search" && parts[1] == "quick-filters" && r.Method == "GET":
+			requireAuth(http.HandlerFunc(handleGetQuickFilters)).ServeHTTP(w, r)
+		case parts[0] == "search" && parts[1] == "history" && r.Method == "GET":
+			requireAuth(http.HandlerFunc(handleGetSearchHistory)).ServeHTTP(w, r)
+		
+		// Saved Searches
+		case parts[0] == "saved-searches" && len(parts) == 1 && r.Method == "GET":
+			requireAuth(http.HandlerFunc(handleGetSavedSearches)).ServeHTTP(w, r)
+		case parts[0] == "saved-searches" && len(parts) == 1 && r.Method == "POST":
+			requireAuth(http.HandlerFunc(handleSaveSavedSearch)).ServeHTTP(w, r)
+		case parts[0] == "saved-searches" && len(parts) == 1 && r.Method == "DELETE":
+			requireAuth(http.HandlerFunc(handleDeleteSavedSearch)).ServeHTTP(w, r)
+
 		// Barcode/QR scan lookup
 		case parts[0] == "scan" && len(parts) == 2 && r.Method == "GET":
 			handleScanLookup(w, r, parts[1])

@@ -1,10 +1,12 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { ScanLine, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { BarcodeScanner } from "../components/BarcodeScanner";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+
+// Lazy load BarcodeScanner to reduce initial bundle size (329KB chunk)
+const BarcodeScanner = lazy(() => import("../components/BarcodeScanner").then(m => ({ default: m.BarcodeScanner })));
 
 interface ScanResult {
   type: string;
@@ -59,7 +61,9 @@ function Scan() {
           <CardTitle>Scan</CardTitle>
         </CardHeader>
         <CardContent>
-          <BarcodeScanner onScan={handleScan} />
+          <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+            <BarcodeScanner onScan={handleScan} />
+          </Suspense>
         </CardContent>
       </Card>
 

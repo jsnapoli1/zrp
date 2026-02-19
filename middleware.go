@@ -1,8 +1,10 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -15,6 +17,42 @@ const (
 	ctxUserID contextKey = "userID"
 	ctxRole   contextKey = "role"
 )
+
+// gzipResponseWriter wraps http.ResponseWriter to support gzip compression
+type gzipResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (w gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+// gzipMiddleware compresses responses when client supports gzip
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only compress if client accepts gzip
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Don't compress if response is already compressed or is a range request
+		if r.Header.Get("Range") != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length") // Let gzip calculate correct length
+
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+
+		gzw := gzipResponseWriter{Writer: gz, ResponseWriter: w}
+		next.ServeHTTP(gzw, r)
+	})
+}
 
 func logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

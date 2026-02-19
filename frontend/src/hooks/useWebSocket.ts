@@ -4,6 +4,9 @@ export interface WSEvent {
   type: string;   // e.g. "eco_updated", "part_created"
   id: string | number;
   action: string; // "create", "update", "delete"
+  user_id?: number;
+  user?: string;
+  data?: any;
 }
 
 export type WSStatus = "connecting" | "connected" | "disconnected";
@@ -33,6 +36,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     setStatus("connecting");
     const ws = new WebSocket(url);
     wsRef.current = ws;
+    // Store globally for presence updates
+    (window as any).__wsConnection = ws;
 
     ws.onopen = () => {
       if (!mountedRef.current) { ws.close(); return; }

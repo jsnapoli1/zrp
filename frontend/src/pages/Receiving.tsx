@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { ClipboardCheck, Clock, CheckCircle, XCircle, AlertTriangle, ScanLine } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -24,7 +24,8 @@ import {
   DialogFooter,
 } from "../components/ui/dialog";
 import { api, type ReceivingInspection } from "../lib/api";
-import { BarcodeScanner } from "../components/BarcodeScanner";
+// Lazy load BarcodeScanner to reduce initial bundle size (329KB chunk)
+const BarcodeScanner = lazy(() => import("../components/BarcodeScanner").then(m => ({ default: m.BarcodeScanner })));
 import { toast } from "sonner";
 function Receiving() {
   const [inspections, setInspections] = useState<ReceivingInspection[]>([]);
@@ -159,12 +160,14 @@ function Receiving() {
       {showScanner && (
         <Card>
           <CardContent className="pt-4">
-            <BarcodeScanner
-              onScan={(code) => {
-                setScanSearch(code);
-                setShowScanner(false);
-              }}
-            />
+            <Suspense fallback={<div className="h-64 bg-muted animate-pulse rounded" />}>
+              <BarcodeScanner
+                onScan={(code) => {
+                  setScanSearch(code);
+                  setShowScanner(false);
+                }}
+              />
+            </Suspense>
           </CardContent>
         </Card>
       )}

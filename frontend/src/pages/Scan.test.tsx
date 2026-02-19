@@ -1,24 +1,29 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "../test/test-utils";
+import { render, screen, waitFor } from "../test/test-utils";
 import Scan from "./Scan";
 
 // Mock BarcodeScanner since it uses html5-qrcode
+// Mock needs to export both named export and default for lazy loading
+const MockScanner = ({ onScan }: { onScan: (v: string) => void }) => (
+  <div data-testid="mock-scanner">
+    <button onClick={() => onScan("TEST-001")}>Mock Scan</button>
+  </div>
+);
+
 vi.mock("../components/BarcodeScanner", () => ({
-  BarcodeScanner: ({ onScan }: { onScan: (v: string) => void }) => (
-    <div data-testid="mock-scanner">
-      <button onClick={() => onScan("TEST-001")}>Mock Scan</button>
-    </div>
-  ),
+  BarcodeScanner: MockScanner,
+  default: { BarcodeScanner: MockScanner },
 }));
 
 // Mock fetch
 globalThis.fetch = vi.fn();
 
 describe("Scan page", () => {
-  it("renders the scanner page", () => {
+  it("renders the scanner page", async () => {
     render(<Scan />);
     expect(screen.getByText("Barcode Scanner")).toBeInTheDocument();
-    expect(screen.getByTestId("mock-scanner")).toBeInTheDocument();
+    // Wait for lazy-loaded BarcodeScanner component to render
+    await waitFor(() => expect(screen.getByTestId("mock-scanner")).toBeInTheDocument());
   });
 
   it("calls API on scan", async () => {
@@ -28,6 +33,9 @@ describe("Scan page", () => {
     });
 
     render(<Scan />);
+    // Wait for lazy-loaded component before interacting
+    await waitFor(() => expect(screen.getByTestId("mock-scanner")).toBeInTheDocument());
+    
     const { fireEvent } = await import("@testing-library/react");
     fireEvent.click(screen.getByText("Mock Scan"));
 
