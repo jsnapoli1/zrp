@@ -120,6 +120,8 @@ type WorkOrder struct {
 	ID          string  `json:"id"`
 	AssemblyIPN string  `json:"assembly_ipn"`
 	Qty         int     `json:"qty"`
+	QtyGood     *int    `json:"qty_good"`
+	QtyScrap    *int    `json:"qty_scrap"`
 	Status      string  `json:"status"`
 	Priority    string  `json:"priority"`
 	Notes       string  `json:"notes"`
@@ -172,18 +174,19 @@ type FieldReport struct {
 }
 
 type NCR struct {
-	ID              string  `json:"id"`
-	Title           string  `json:"title"`
-	Description     string  `json:"description"`
-	IPN             string  `json:"ipn"`
-	SerialNumber    string  `json:"serial_number"`
-	DefectType      string  `json:"defect_type"`
-	Severity        string  `json:"severity"`
-	Status          string  `json:"status"`
-	RootCause       string  `json:"root_cause"`
-	CorrectiveAction string `json:"corrective_action"`
-	CreatedAt       string  `json:"created_at"`
-	ResolvedAt      *string `json:"resolved_at"`
+	ID               string  `json:"id"`
+	Title            string  `json:"title"`
+	Description      string  `json:"description"`
+	IPN              string  `json:"ipn"`
+	SerialNumber     string  `json:"serial_number"`
+	DefectType       string  `json:"defect_type"`
+	Severity         string  `json:"severity"`
+	Status           string  `json:"status"`
+	RootCause        string  `json:"root_cause"`
+	CorrectiveAction string  `json:"corrective_action"`
+	CreatedBy        string  `json:"created_by"`
+	CreatedAt        string  `json:"created_at"`
+	ResolvedAt       *string `json:"resolved_at"`
 }
 
 type Device struct {

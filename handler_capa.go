@@ -118,7 +118,7 @@ func handleCreateCAPA(w http.ResponseWriter, r *http.Request) {
 func handleUpdateCAPA(w http.ResponseWriter, r *http.Request, id string) {
 	oldSnap, _ := getCAPASnapshot(id)
 	username := getUsername(r)
-	userRole := getUserRole(r)
+	_ = getUserRole(r)
 	userID, err := getUserID(r)
 	if err != nil {
 		jsonErr(w, "authentication required", 401)

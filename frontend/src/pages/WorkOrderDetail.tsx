@@ -365,6 +365,80 @@ function WorkOrderDetail() {
               Print Traveler
             </Link>
           </Button>
+          <Button variant="outline" asChild>
+            <Link to={`/testing?wo_id=${id}`}>
+              <TestTube className="h-4 w-4 mr-2" />
+              Testing
+            </Link>
+          </Button>
+          {workOrder && workOrder.status !== 'completed' && workOrder.status !== 'cancelled' && (
+            <Button variant="outline" onClick={handleKitMaterials}>
+              <Wrench className="h-4 w-4 mr-2" />
+              Kit Materials
+            </Button>
+          )}
+          
+          <Dialog open={serialDialogOpen} onOpenChange={setSerialDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" disabled={workOrder?.status === 'completed' || workOrder?.status === 'cancelled'}>
+                <Hash className="h-4 w-4 mr-2" />
+                Manage Serials
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Serial Number Management</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Current Serials</p>
+                  <div className="max-h-40 overflow-y-auto">
+                    {serials.length > 0 ? (
+                      serials.map((serial, index) => (
+                        <div key={index} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded mb-2">
+                          <div>
+                            <span className="font-mono text-sm">{serial.serial_number}</span>
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              {serial.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No serial numbers assigned</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Add New Serial</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newSerial}
+                      onChange={(e) => setNewSerial(e.target.value)}
+                      placeholder="Enter serial number"
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded text-sm"
+                    />
+                    <Button onClick={handleAddSerial} disabled={!newSerial.trim()}>
+                      Add
+                    </Button>
+                  </div>
+                  <div className="mt-2">
+                    <Button variant="outline" onClick={handleGenerateSerial} className="w-full">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Auto-Generate Serial
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setSerialDialogOpen(false)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          
           {canChangeStatus() && (
             <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
               <DialogTrigger asChild>
@@ -557,6 +631,94 @@ function WorkOrderDetail() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Serial Numbers Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Hash className="h-5 w-5" />
+            Serial Numbers ({serials.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {serials.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {serials.map((serial, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-mono text-sm font-medium">{serial.serial_number}</p>
+                    {serial.notes && (
+                      <p className="text-xs text-muted-foreground mt-1">{serial.notes}</p>
+                    )}
+                  </div>
+                  <Badge 
+                    variant={
+                      serial.status === 'completed' ? 'default' :
+                      serial.status === 'assigned' ? 'secondary' :
+                      'outline'
+                    }
+                    className="text-xs"
+                  >
+                    {serial.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">
+              No serial numbers assigned yet. Click "Manage Serials" to add some.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Kitting Results */}
+      {kittingResults && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-green-600">
+              <CheckCircle className="h-5 w-5" />
+              Materials Kitted Successfully
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Kitted on: {new Date(kittingResults.kitted_at).toLocaleString()}</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>IPN</TableHead>
+                    <TableHead className="text-right">Required</TableHead>
+                    <TableHead className="text-right">Kitted</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {kittingResults.items.map((item: any, index: number) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{item.ipn}</TableCell>
+                      <TableCell className="text-right font-mono">{item.required}</TableCell>
+                      <TableCell className="text-right font-mono">{item.kitted}</TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={
+                            item.status === 'kitted' ? 'default' :
+                            item.status === 'partial' ? 'secondary' :
+                            'destructive'
+                          }
+                        >
+                          {item.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       </div>
 
       {workOrder.notes && (

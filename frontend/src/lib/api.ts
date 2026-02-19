@@ -498,6 +498,44 @@ export interface QuoteLine {
   notes: string;
 }
 
+export interface SalesOrder {
+  id: string;
+  quote_id: string;
+  customer: string;
+  status: string;
+  notes: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  shipment_id?: string;
+  invoice_id?: string;
+  lines?: SalesOrderLine[];
+}
+
+export interface SalesOrderLine {
+  id: number;
+  sales_order_id: string;
+  ipn: string;
+  description: string;
+  qty: number;
+  qty_allocated: number;
+  qty_picked: number;
+  qty_shipped: number;
+  unit_price: number;
+  notes: string;
+}
+
+export interface Invoice {
+  id: string;
+  sales_order_id: string;
+  customer: string;
+  status: string;
+  total_amount: number;
+  created_at: string;
+  due_date: string;
+  paid_at?: string;
+}
+
 export interface DashboardStats {
   total_parts: number;
   low_stock_alerts: number;
@@ -1327,6 +1365,51 @@ class ApiClient {
     }
 
     return response.blob();
+  }
+
+  async convertQuoteToOrder(quoteId: string): Promise<SalesOrder> {
+    return this.request(`/quotes/${quoteId}/convert-to-order`, { method: 'POST' });
+  }
+
+  // Sales Orders
+  async getSalesOrders(params?: { status?: string; customer?: string }): Promise<SalesOrder[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.customer) query.set('customer', params.customer);
+    const qs = query.toString();
+    return this.request(`/sales-orders${qs ? '?' + qs : ''}`);
+  }
+
+  async getSalesOrder(id: string): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}`);
+  }
+
+  async createSalesOrder(order: Partial<SalesOrder>): Promise<SalesOrder> {
+    return this.request('/sales-orders', { method: 'POST', body: JSON.stringify(order) });
+  }
+
+  async updateSalesOrder(id: string, order: Partial<SalesOrder>): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}`, { method: 'PUT', body: JSON.stringify(order) });
+  }
+
+  async confirmSalesOrder(id: string): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}/confirm`, { method: 'POST' });
+  }
+
+  async allocateSalesOrder(id: string): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}/allocate`, { method: 'POST' });
+  }
+
+  async pickSalesOrder(id: string): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}/pick`, { method: 'POST' });
+  }
+
+  async shipSalesOrder(id: string): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}/ship`, { method: 'POST' });
+  }
+
+  async invoiceSalesOrder(id: string): Promise<SalesOrder> {
+    return this.request(`/sales-orders/${id}/invoice`, { method: 'POST' });
   }
 
   // Documents

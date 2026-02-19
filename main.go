@@ -323,6 +323,10 @@ func main() {
 			handleGetNCR(w, r, parts[1])
 		case parts[0] == "ncrs" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdateNCR(w, r, parts[1])
+		case parts[0] == "ncrs" && len(parts) == 3 && parts[2] == "create-capa" && r.Method == "POST":
+			handleCreateCAPAFromNCR(w, r, parts[1])
+		case parts[0] == "ncrs" && len(parts) == 3 && parts[2] == "create-eco" && r.Method == "POST":
+			handleCreateECOFromNCR(w, r, parts[1])
 
 		// Devices
 		case parts[0] == "devices" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":

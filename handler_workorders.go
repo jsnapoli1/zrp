@@ -9,7 +9,7 @@ import (
 )
 
 func handleListWorkOrders(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id,assembly_ipn,qty,qty_good,qty_scrap,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders ORDER BY created_at DESC")
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
 		return
@@ -19,8 +19,11 @@ func handleListWorkOrders(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var wo WorkOrder
 		var sa, ca sql.NullString
-		rows.Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
+		var qtyGood, qtyScrap sql.NullInt64
+		rows.Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &qtyGood, &qtyScrap, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
 		wo.StartedAt = sp(sa); wo.CompletedAt = sp(ca)
+		if qtyGood.Valid { good := int(qtyGood.Int64); wo.QtyGood = &good }
+		if qtyScrap.Valid { scrap := int(qtyScrap.Int64); wo.QtyScrap = &scrap }
 		items = append(items, wo)
 	}
 	if items == nil { items = []WorkOrder{} }
@@ -30,13 +33,16 @@ func handleListWorkOrders(w http.ResponseWriter, r *http.Request) {
 func handleGetWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 	var wo WorkOrder
 	var sa, ca sql.NullString
-	err := db.QueryRow("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
-		Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
+	var qtyGood, qtyScrap sql.NullInt64
+	err := db.QueryRow("SELECT id,assembly_ipn,qty,qty_good,qty_scrap,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
+		Scan(&wo.ID, &wo.AssemblyIPN, &wo.Qty, &qtyGood, &qtyScrap, &wo.Status, &wo.Priority, &wo.Notes, &wo.CreatedAt, &sa, &ca)
 	if err != nil {
 		jsonErr(w, "not found", 404)
 		return
 	}
 	wo.StartedAt = sp(sa); wo.CompletedAt = sp(ca)
+	if qtyGood.Valid { good := int(qtyGood.Int64); wo.QtyGood = &good }
+	if qtyScrap.Valid { scrap := int(qtyScrap.Int64); wo.QtyScrap = &scrap }
 	jsonResp(w, wo)
 }
 
@@ -59,8 +65,8 @@ func handleCreateWorkOrder(w http.ResponseWriter, r *http.Request) {
 	if wo.Priority == "" { wo.Priority = "normal" }
 	if wo.Qty == 0 { wo.Qty = 1 }
 	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err := db.Exec("INSERT INTO work_orders (id,assembly_ipn,qty,status,priority,notes,created_at) VALUES (?,?,?,?,?,?,?)",
-		wo.ID, wo.AssemblyIPN, wo.Qty, wo.Status, wo.Priority, wo.Notes, now)
+	_, err := db.Exec("INSERT INTO work_orders (id,assembly_ipn,qty,qty_good,qty_scrap,status,priority,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+		wo.ID, wo.AssemblyIPN, wo.Qty, wo.QtyGood, wo.QtyScrap, wo.Status, wo.Priority, wo.Notes, now)
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
 		return
@@ -82,8 +88,9 @@ func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 	// Get current work order state for validation
 	var currentWO WorkOrder
 	var sa, ca sql.NullString
-	err := db.QueryRow("SELECT id,assembly_ipn,qty,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
-		Scan(&currentWO.ID, &currentWO.AssemblyIPN, &currentWO.Qty, &currentWO.Status, &currentWO.Priority, &currentWO.Notes, &currentWO.CreatedAt, &sa, &ca)
+	var qtyGood, qtyScrap sql.NullInt64
+	err := db.QueryRow("SELECT id,assembly_ipn,qty,qty_good,qty_scrap,status,priority,COALESCE(notes,''),created_at,started_at,completed_at FROM work_orders WHERE id=?", id).
+		Scan(&currentWO.ID, &currentWO.AssemblyIPN, &currentWO.Qty, &qtyGood, &qtyScrap, &currentWO.Status, &currentWO.Priority, &currentWO.Notes, &currentWO.CreatedAt, &sa, &ca)
 	if err != nil {
 		jsonErr(w, "work order not found", 404)
 		return

@@ -8,14 +8,14 @@ import (
 )
 
 func handleListNCRs(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id,title,COALESCE(description,''),COALESCE(ipn,''),COALESCE(serial_number,''),COALESCE(defect_type,''),severity,status,COALESCE(root_cause,''),COALESCE(corrective_action,''),created_at,resolved_at FROM ncrs ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id,title,COALESCE(description,''),COALESCE(ipn,''),COALESCE(serial_number,''),COALESCE(defect_type,''),severity,status,COALESCE(root_cause,''),COALESCE(corrective_action,''),COALESCE(created_by,''),created_at,resolved_at FROM ncrs ORDER BY created_at DESC")
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	defer rows.Close()
 	var items []NCR
 	for rows.Next() {
 		var n NCR
 		var ra sql.NullString
-		rows.Scan(&n.ID, &n.Title, &n.Description, &n.IPN, &n.SerialNumber, &n.DefectType, &n.Severity, &n.Status, &n.RootCause, &n.CorrectiveAction, &n.CreatedAt, &ra)
+		rows.Scan(&n.ID, &n.Title, &n.Description, &n.IPN, &n.SerialNumber, &n.DefectType, &n.Severity, &n.Status, &n.RootCause, &n.CorrectiveAction, &n.CreatedBy, &n.CreatedAt, &ra)
 		n.ResolvedAt = sp(ra)
 		items = append(items, n)
 	}
@@ -26,8 +26,8 @@ func handleListNCRs(w http.ResponseWriter, r *http.Request) {
 func handleGetNCR(w http.ResponseWriter, r *http.Request, id string) {
 	var n NCR
 	var ra sql.NullString
-	err := db.QueryRow("SELECT id,title,COALESCE(description,''),COALESCE(ipn,''),COALESCE(serial_number,''),COALESCE(defect_type,''),severity,status,COALESCE(root_cause,''),COALESCE(corrective_action,''),created_at,resolved_at FROM ncrs WHERE id=?", id).
-		Scan(&n.ID, &n.Title, &n.Description, &n.IPN, &n.SerialNumber, &n.DefectType, &n.Severity, &n.Status, &n.RootCause, &n.CorrectiveAction, &n.CreatedAt, &ra)
+	err := db.QueryRow("SELECT id,title,COALESCE(description,''),COALESCE(ipn,''),COALESCE(serial_number,''),COALESCE(defect_type,''),severity,status,COALESCE(root_cause,''),COALESCE(corrective_action,''),COALESCE(created_by,''),created_at,resolved_at FROM ncrs WHERE id=?", id).
+		Scan(&n.ID, &n.Title, &n.Description, &n.IPN, &n.SerialNumber, &n.DefectType, &n.Severity, &n.Status, &n.RootCause, &n.CorrectiveAction, &n.CreatedBy, &n.CreatedAt, &ra)
 	if err != nil { jsonErr(w, "not found", 404); return }
 	n.ResolvedAt = sp(ra)
 	jsonResp(w, n)
@@ -48,11 +48,14 @@ func handleCreateNCR(w http.ResponseWriter, r *http.Request) {
 	if n.Status == "" { n.Status = "open" }
 	if n.Severity == "" { n.Severity = "minor" }
 	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err := db.Exec("INSERT INTO ncrs (id,title,description,ipn,serial_number,defect_type,severity,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-		n.ID, n.Title, n.Description, n.IPN, n.SerialNumber, n.DefectType, n.Severity, n.Status, now)
+	username := getUsername(r)
+	
+	// Add created_by field (Gap 5.2)
+	_, err := db.Exec("INSERT INTO ncrs (id,title,description,ipn,serial_number,defect_type,severity,status,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+		n.ID, n.Title, n.Description, n.IPN, n.SerialNumber, n.DefectType, n.Severity, n.Status, username, now)
 	if err != nil { jsonErr(w, err.Error(), 500); return }
 	n.CreatedAt = now
-	logAudit(db, getUsername(r), "created", "ncr", n.ID, "Created "+n.ID+": "+n.Title)
+	logAudit(db, username, "created", "ncr", n.ID, "Created "+n.ID+": "+n.Title)
 	recordChangeJSON(getUsername(r), "ncrs", n.ID, "create", nil, n)
 	go emailOnNCRCreated(n.ID, n.Title)
 	jsonResp(w, n)
