@@ -42,6 +42,11 @@ func main() {
 		log.Fatal("DB init failed:", err)
 	}
 	seedDB()
+	
+	// Initialize query profiler (100ms threshold for slow queries)
+	InitQueryProfiler(true, 100)
+	log.Println("Query profiler enabled with 100ms threshold")
+	
 	initNotificationPrefsTable()
 	if err := initPermissionsTable(); err != nil {
 		log.Fatal("Permissions init failed:", err)
@@ -467,6 +472,16 @@ func main() {
 			handleMyPermissions(w, r)
 		case parts[0] == "permissions" && len(parts) == 2 && parts[1] != "modules" && parts[1] != "me" && r.Method == "PUT":
 			handleSetPermissions(w, r, parts[1])
+
+		// Debug / Query Profiler (development/monitoring)
+		case parts[0] == "debug" && len(parts) == 2 && parts[1] == "query-stats" && r.Method == "GET":
+			handleQueryProfilerStats(w, r)
+		case parts[0] == "debug" && len(parts) == 2 && parts[1] == "slow-queries" && r.Method == "GET":
+			handleQueryProfilerSlowQueries(w, r)
+		case parts[0] == "debug" && len(parts) == 2 && parts[1] == "all-queries" && r.Method == "GET":
+			handleQueryProfilerAllQueries(w, r)
+		case parts[0] == "debug" && len(parts) == 2 && parts[1] == "query-reset" && r.Method == "POST":
+			handleQueryProfilerReset(w, r)
 
 		// Attachments
 		case parts[0] == "attachments" && len(parts) == 1 && r.Method == "POST":
