@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "../test/test-utils";
 
+let mockIPN = "IPN-003";
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
     ...actual,
-    useParams: () => ({ ipn: "IPN-003" }),
+    useParams: () => ({ ipn: mockIPN }),
     useNavigate: () => mockNavigate,
   };
 });
@@ -29,8 +30,8 @@ const mockPart = {
 };
 
 const mockBOM = {
-  ipn: "IPN-003",
-  description: "MCU STM32",
+  ipn: "PCA-100",
+  description: "Main Board",
   qty: 1,
   children: [
     { ipn: "IPN-001", description: "10k Resistor", qty: 4, ref: "R1-R4", children: [] },
@@ -46,9 +47,9 @@ const mockCost = {
   bom_cost: 12.50,
 };
 
-const mockGetPart = vi.fn().mockResolvedValue(mockPart);
-const mockGetPartBOM = vi.fn().mockResolvedValue(mockBOM);
-const mockGetPartCost = vi.fn().mockResolvedValue(mockCost);
+const mockGetPart = vi.fn();
+const mockGetPartBOM = vi.fn();
+const mockGetPartCost = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -60,36 +61,41 @@ vi.mock("../lib/api", () => ({
 
 import PartDetail from "./PartDetail";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockIPN = "IPN-003";
+  mockGetPart.mockResolvedValue(mockPart);
+  mockGetPartBOM.mockResolvedValue(mockBOM);
+  mockGetPartCost.mockResolvedValue(mockCost);
+});
+
+const waitForLoad = () => waitFor(() => expect(screen.getByText("Part Details")).toBeInTheDocument());
 
 describe("PartDetail", () => {
   it("renders part IPN as heading", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("IPN-003")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("IPN-003");
   });
 
   it("renders part description", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("MCU STM32")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    // Description appears in multiple places; just check it exists
+    expect(screen.getAllByText("MCU STM32").length).toBeGreaterThan(0);
   });
 
   it("renders category and status badges", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("ICs")).toBeInTheDocument();
-      expect(screen.getByText("active")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getAllByText("ICs").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("active").length).toBeGreaterThan(0);
   });
 
   it("renders Part Details card with fields", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Part Details")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("Part Details")).toBeInTheDocument();
     expect(screen.getByText("STMicro")).toBeInTheDocument();
     expect(screen.getByText("STM32F401")).toBeInTheDocument();
     expect(screen.getByText("Shelf C")).toBeInTheDocument();
@@ -97,31 +103,26 @@ describe("PartDetail", () => {
 
   it("renders manufacturer and MPN labels", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Manufacturer")).toBeInTheDocument();
-      expect(screen.getByText("MPN")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("Manufacturer")).toBeInTheDocument();
+    expect(screen.getByText("MPN")).toBeInTheDocument();
   });
 
   it("renders stock value", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Stock")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("Stock")).toBeInTheDocument();
   });
 
   it("renders notes", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Main MCU for product line")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("Main MCU for product line")).toBeInTheDocument();
   });
 
   it("renders datasheet link", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("View Datasheet")).toBeInTheDocument();
-    });
+    await waitForLoad();
     const link = screen.getByText("View Datasheet").closest("a");
     expect(link).toHaveAttribute("href", "https://example.com/datasheet.pdf");
     expect(link).toHaveAttribute("target", "_blank");
@@ -129,60 +130,52 @@ describe("PartDetail", () => {
 
   it("renders Cost Information card", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Cost Information")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("Cost Information")).toBeInTheDocument();
   });
 
   it("shows unit cost", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("$5.00")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("$5.00")).toBeInTheDocument();
   });
 
   it("shows last purchase price", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("$4.50")).toBeInTheDocument();
-      expect(screen.getByText("Last Purchase Price")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("$4.50")).toBeInTheDocument();
+    expect(screen.getByText("Last Purchase Price")).toBeInTheDocument();
   });
 
   it("shows PO reference in cost section", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText(/PO: PO-001/)).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText(/PO: PO-001/)).toBeInTheDocument();
   });
 
   it("shows BOM cost rollup", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("$12.50")).toBeInTheDocument();
-      expect(screen.getByText("BOM Cost Rollup")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("$12.50")).toBeInTheDocument();
+    expect(screen.getByText("BOM Cost Rollup")).toBeInTheDocument();
   });
 
   it("has back to parts button", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Back to Parts")).toBeInTheDocument();
-    });
+    await waitForLoad();
+    expect(screen.getByText("Back to Parts")).toBeInTheDocument();
   });
 
   it("navigates back on back button click", async () => {
     render(<PartDetail />);
-    await waitFor(() => {
-      expect(screen.getByText("Back to Parts")).toBeInTheDocument();
-    });
+    await waitForLoad();
     fireEvent.click(screen.getByText("Back to Parts"));
     expect(mockNavigate).toHaveBeenCalledWith("/parts");
   });
 
   it("shows no cost info message when no cost data", async () => {
-    mockGetPart.mockResolvedValueOnce({ ipn: "IPN-003", fields: {} });
-    mockGetPartCost.mockResolvedValueOnce({ ipn: "IPN-003" });
+    mockGetPart.mockResolvedValue({ ipn: "IPN-003", fields: {} });
+    mockGetPartCost.mockResolvedValue({ ipn: "IPN-003" });
     render(<PartDetail />);
     await waitFor(() => {
       expect(screen.getByText("No cost information available")).toBeInTheDocument();
@@ -190,7 +183,7 @@ describe("PartDetail", () => {
   });
 
   it("shows Part Not Found for missing part", async () => {
-    mockGetPart.mockRejectedValueOnce(new Error("Not found"));
+    mockGetPart.mockRejectedValue(new Error("Not found"));
     render(<PartDetail />);
     await waitFor(() => {
       expect(screen.getByText("Part Not Found")).toBeInTheDocument();
@@ -201,8 +194,7 @@ describe("PartDetail", () => {
 
 describe("PartDetail - BOM (assembly IPN)", () => {
   beforeEach(() => {
-    // Override useParams to return an assembly IPN
-    vi.mocked(require("react-router-dom").useParams).mockReturnValue({ ipn: "PCA-100" });
+    mockIPN = "PCA-100";
     mockGetPart.mockResolvedValue({
       ipn: "PCA-100",
       fields: { _category: "Assemblies", description: "Main Board", status: "active" },
@@ -211,8 +203,11 @@ describe("PartDetail - BOM (assembly IPN)", () => {
     mockGetPartCost.mockResolvedValue({ ipn: "PCA-100", bom_cost: 25.0 });
   });
 
+  const waitForAssembly = () => waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("PCA-100"));
+
   it("renders Bill of Materials card for assembly", async () => {
     render(<PartDetail />);
+    await waitForAssembly();
     await waitFor(() => {
       expect(screen.getByText("Bill of Materials")).toBeInTheDocument();
     });
@@ -220,6 +215,7 @@ describe("PartDetail - BOM (assembly IPN)", () => {
 
   it("renders BOM children IPNs", async () => {
     render(<PartDetail />);
+    await waitForAssembly();
     await waitFor(() => {
       expect(screen.getByText("IPN-001")).toBeInTheDocument();
       expect(screen.getByText("IPN-002")).toBeInTheDocument();
@@ -228,6 +224,7 @@ describe("PartDetail - BOM (assembly IPN)", () => {
 
   it("renders BOM quantities", async () => {
     render(<PartDetail />);
+    await waitForAssembly();
     await waitFor(() => {
       expect(screen.getByText("Qty: 4")).toBeInTheDocument();
       expect(screen.getByText("Qty: 2")).toBeInTheDocument();
@@ -236,6 +233,7 @@ describe("PartDetail - BOM (assembly IPN)", () => {
 
   it("renders BOM reference designators", async () => {
     render(<PartDetail />);
+    await waitForAssembly();
     await waitFor(() => {
       expect(screen.getByText("R1-R4")).toBeInTheDocument();
       expect(screen.getByText("C1-C2")).toBeInTheDocument();
@@ -243,8 +241,9 @@ describe("PartDetail - BOM (assembly IPN)", () => {
   });
 
   it("shows no BOM data message when BOM fetch fails", async () => {
-    mockGetPartBOM.mockRejectedValueOnce(new Error("fail"));
+    mockGetPartBOM.mockRejectedValue(new Error("fail"));
     render(<PartDetail />);
+    await waitForAssembly();
     await waitFor(() => {
       expect(screen.getByText("No BOM data available for this assembly")).toBeInTheDocument();
     });
