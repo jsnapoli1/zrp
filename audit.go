@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,6 +15,12 @@ func logAudit(db *sql.DB, username, action, module, recordID, summary string) {
 	if err != nil {
 		fmt.Printf("audit log error: %v\n", err)
 	}
+	// Broadcast WebSocket event for real-time UI updates
+	wsHub.Broadcast(WSEvent{
+		Type:   module + "_" + action + "d",
+		ID:     recordID,
+		Action: action,
+	})
 }
 
 func getUsername(r *http.Request) string {
@@ -42,18 +49,28 @@ type AuditEntry struct {
 func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	limitStr := r.URL.Query().Get("limit")
 	module := r.URL.Query().Get("module")
+	// Support frontend's "entity_type" param as alias for "module"
+	if module == "" {
+		module = r.URL.Query().Get("entity_type")
+	}
 	limit := 50
 	if limitStr != "" {
 		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
 			limit = n
 		}
 	}
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
 
 	user := r.URL.Query().Get("user")
+	search := r.URL.Query().Get("search")
 	dateFrom := r.URL.Query().Get("from")
 	dateTo := r.URL.Query().Get("to")
 
-	query := "SELECT id, COALESCE(username,'system'), action, module, record_id, COALESCE(summary,''), created_at FROM audit_log"
 	var args []interface{}
 	var conditions []string
 	if module != "" {
@@ -64,6 +81,11 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		conditions = append(conditions, "username = ?")
 		args = append(args, user)
 	}
+	if search != "" {
+		conditions = append(conditions, "(summary LIKE ? OR action LIKE ? OR module LIKE ? OR record_id LIKE ?)")
+		s := "%" + search + "%"
+		args = append(args, s, s, s, s)
+	}
 	if dateFrom != "" {
 		conditions = append(conditions, "created_at >= ?")
 		args = append(args, dateFrom)
@@ -72,13 +94,23 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		conditions = append(conditions, "created_at <= ?")
 		args = append(args, dateTo+" 23:59:59")
 	}
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-	query += " ORDER BY created_at DESC LIMIT ?"
-	args = append(args, limit)
 
-	rows, err := db.Query(query, args...)
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	// Get total count
+	var total int
+	countQuery := "SELECT COUNT(*) FROM audit_log" + whereClause
+	db.QueryRow(countQuery, args...).Scan(&total)
+
+	// Get paginated results
+	offset := (page - 1) * limit
+	query := "SELECT id, COALESCE(username,'system'), action, module, record_id, COALESCE(summary,''), created_at FROM audit_log" + whereClause + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	queryArgs := append(args, limit, offset)
+
+	rows, err := db.Query(query, queryArgs...)
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
 		return
@@ -94,7 +126,11 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []AuditEntry{}
 	}
-	jsonResp(w, items)
+	// Return in format expected by frontend: { entries: [], total: N }
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"entries": items,
+		"total":   total,
+	})
 }
 
 func handleDashboardCharts(w http.ResponseWriter, r *http.Request) {

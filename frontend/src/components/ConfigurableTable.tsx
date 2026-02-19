@@ -1,0 +1,327 @@
+import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "./ui/dropdown-menu";
+import { Button } from "./ui/button";
+import { Settings2, ArrowUp, ArrowDown, RotateCcw } from "lucide-react";
+
+export interface ColumnDef<T> {
+  id: string;
+  label: string;
+  accessor: (row: T) => ReactNode;
+  defaultVisible?: boolean;
+  className?: string;
+  headerClassName?: string;
+  minWidth?: number;
+  defaultWidth?: number;
+}
+
+interface ColumnState {
+  id: string;
+  visible: boolean;
+  width?: number;
+}
+
+interface ConfigurableTableProps<T> {
+  tableName: string;
+  columns: ColumnDef<T>[];
+  data: T[];
+  rowKey: (row: T) => string;
+  onRowClick?: (row: T) => void;
+  rowClassName?: (row: T) => string;
+  emptyMessage?: string;
+  extraRowContent?: (row: T) => ReactNode;
+  /** Extra column rendered before configurable columns (e.g. checkbox) */
+  leadingColumn?: {
+    header: ReactNode;
+    cell: (row: T) => ReactNode;
+    className?: string;
+  };
+}
+
+function loadColumnState(tableName: string): ColumnState[] | null {
+  try {
+    const stored = localStorage.getItem(`zrp-columns-${tableName}`);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveColumnState(tableName: string, state: ColumnState[]) {
+  try {
+    localStorage.setItem(`zrp-columns-${tableName}`, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+export function ConfigurableTable<T>({
+  tableName,
+  columns,
+  data,
+  rowKey,
+  onRowClick,
+  rowClassName,
+  emptyMessage = "No data found",
+  leadingColumn,
+}: ConfigurableTableProps<T>) {
+  const [columnOrder, setColumnOrder] = useState<ColumnState[]>(() => {
+    const saved = loadColumnState(tableName);
+    if (saved) {
+      // Merge saved state with current columns (handle new/removed columns)
+      const savedMap = new Map(saved.map((s) => [s.id, s]));
+      const merged: ColumnState[] = [];
+      // Keep saved order for existing columns
+      for (const s of saved) {
+        if (columns.find((c) => c.id === s.id)) {
+          merged.push(s);
+        }
+      }
+      // Add new columns not in saved state
+      for (const c of columns) {
+        if (!savedMap.has(c.id)) {
+          merged.push({
+            id: c.id,
+            visible: c.defaultVisible !== false,
+            width: c.defaultWidth,
+          });
+        }
+      }
+      return merged;
+    }
+    return columns.map((c) => ({
+      id: c.id,
+      visible: c.defaultVisible !== false,
+      width: c.defaultWidth,
+    }));
+  });
+
+  // Persist on change
+  useEffect(() => {
+    saveColumnState(tableName, columnOrder);
+  }, [tableName, columnOrder]);
+
+  const colMap = new Map(columns.map((c) => [c.id, c]));
+
+  const visibleColumns = columnOrder
+    .filter((cs) => cs.visible && colMap.has(cs.id))
+    .map((cs) => ({ ...colMap.get(cs.id)!, width: cs.width }));
+
+  const toggleVisibility = (id: string) => {
+    setColumnOrder((prev) =>
+      prev.map((cs) => (cs.id === id ? { ...cs, visible: !cs.visible } : cs))
+    );
+  };
+
+  const moveColumn = (id: string, direction: "up" | "down") => {
+    setColumnOrder((prev) => {
+      const idx = prev.findIndex((cs) => cs.id === id);
+      if (idx < 0) return prev;
+      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const resetColumns = () => {
+    const defaultState = columns.map((c) => ({
+      id: c.id,
+      visible: c.defaultVisible !== false,
+      width: c.defaultWidth,
+    }));
+    setColumnOrder(defaultState);
+  };
+
+  // Column resize
+  const resizingRef = useRef<{
+    colId: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, colId: string, currentWidth: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resizingRef.current = {
+        colId,
+        startX: e.clientX,
+        startWidth: currentWidth,
+      };
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        if (!resizingRef.current) return;
+        const diff = ev.clientX - resizingRef.current.startX;
+        const newWidth = Math.max(50, resizingRef.current.startWidth + diff);
+        setColumnOrder((prev) =>
+          prev.map((cs) =>
+            cs.id === resizingRef.current!.colId
+              ? { ...cs, width: newWidth }
+              : cs
+          )
+        );
+      };
+
+      const handleMouseUp = () => {
+        resizingRef.current = null;
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    []
+  );
+
+  return (
+    <div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {leadingColumn && (
+              <TableHead className={leadingColumn.className}>
+                {leadingColumn.header}
+              </TableHead>
+            )}
+            {visibleColumns.map((col) => (
+              <TableHead
+                key={col.id}
+                className={col.headerClassName}
+                style={col.width ? { width: col.width, minWidth: col.minWidth || 50 } : { minWidth: col.minWidth || 50 }}
+              >
+                <div className="flex items-center gap-1 relative pr-2">
+                  <span>{col.label}</span>
+                  {/* Resize handle */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30"
+                    onMouseDown={(e) =>
+                      handleResizeStart(e, col.id, col.width || 150)
+                    }
+                  />
+                </div>
+              </TableHead>
+            ))}
+            <TableHead className="w-10 print:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>Configure Columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {columnOrder.map((cs, idx) => {
+                    const col = colMap.get(cs.id);
+                    if (!col) return null;
+                    return (
+                      <div key={cs.id} className="flex items-center">
+                        <DropdownMenuCheckboxItem
+                          checked={cs.visible}
+                          onCheckedChange={() => toggleVisibility(cs.id)}
+                          onSelect={(e) => e.preventDefault()}
+                          className="flex-1"
+                        >
+                          {col.label}
+                        </DropdownMenuCheckboxItem>
+                        <div className="flex gap-0.5 pr-2">
+                          <button
+                            className="p-0.5 hover:bg-muted rounded disabled:opacity-30"
+                            disabled={idx === 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveColumn(cs.id, "up");
+                            }}
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            className="p-0.5 hover:bg-muted rounded disabled:opacity-30"
+                            disabled={idx === columnOrder.length - 1}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveColumn(cs.id, "down");
+                            }}
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <DropdownMenuSeparator />
+                  <div className="p-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={resetColumns}
+                    >
+                      <RotateCcw className="h-3 w-3 mr-2" />
+                      Reset to Default
+                    </Button>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={visibleColumns.length + (leadingColumn ? 2 : 1)}
+                className="text-center py-8 text-muted-foreground"
+              >
+                {emptyMessage}
+              </TableCell>
+            </TableRow>
+          ) : (
+            data.map((row) => (
+              <TableRow
+                key={rowKey(row)}
+                className={`${onRowClick ? "cursor-pointer hover:bg-muted/50" : ""} ${rowClassName?.(row) || ""}`}
+                onClick={() => onRowClick?.(row)}
+              >
+                {leadingColumn && (
+                  <TableCell className={leadingColumn.className}>
+                    {leadingColumn.cell(row)}
+                  </TableCell>
+                )}
+                {visibleColumns.map((col) => (
+                  <TableCell
+                    key={col.id}
+                    className={col.className}
+                    style={col.width ? { width: col.width } : undefined}
+                  >
+                    {col.accessor(row)}
+                  </TableCell>
+                ))}
+                <TableCell className="print:hidden" />
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+export default ConfigurableTable;

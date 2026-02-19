@@ -45,6 +45,28 @@ export interface BOMNode {
   children: BOMNode[];
 }
 
+export interface ReceivingInspection {
+  id: number;
+  po_id: string;
+  po_line_id: number;
+  ipn: string;
+  qty_received: number;
+  qty_passed: number;
+  qty_failed: number;
+  qty_on_hold: number;
+  inspector: string;
+  inspected_at?: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface WhereUsedEntry {
+  assembly_ipn: string;
+  description: string;
+  qty: number;
+  ref: string;
+}
+
 export interface PartCost {
   ipn: string;
   last_unit_price?: number;
@@ -78,6 +100,22 @@ export interface Attachment {
   mime_type: string;
   uploaded_by: string;
   created_at: string;
+}
+
+export interface ECORevision {
+  id: number;
+  eco_id: string;
+  revision: string;
+  status: string;
+  changes_summary: string;
+  created_by: string;
+  created_at: string;
+  approved_by?: string;
+  approved_at?: string;
+  implemented_by?: string;
+  implemented_at?: string;
+  effectivity_date?: string;
+  notes: string;
 }
 
 export interface ECO {
@@ -337,7 +375,13 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
+      if (response.status === 401 && !endpoint.includes('/auth/')) {
+        // Session expired — redirect to login
+        window.location.href = '/login';
+        throw new Error('Session expired');
+      }
+      const body = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(body.error || `API error: ${response.statusText}`);
     }
 
     return response.json();
@@ -455,6 +499,22 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify({ status: 'rejected' }),
     });
+  }
+
+  // ECO Revisions
+  async getECORevisions(ecoId: string): Promise<ECORevision[]> {
+    return this.request(`/ecos/${ecoId}/revisions`);
+  }
+
+  async createECORevision(ecoId: string, data: { changes_summary: string; effectivity_date?: string; notes?: string }): Promise<ECORevision> {
+    return this.request(`/ecos/${ecoId}/revisions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getECORevision(ecoId: string, rev: string): Promise<ECORevision> {
+    return this.request(`/ecos/${ecoId}/revisions/${rev}`);
   }
 
   // Work Orders
@@ -582,11 +642,29 @@ class ApiClient {
     });
   }
 
-  async receivePurchaseOrder(id: string, lines: { id: number; qty: number }[]): Promise<PurchaseOrder> {
+  async receivePurchaseOrder(id: string, lines: { id: number; qty: number }[], skipInspection?: boolean): Promise<PurchaseOrder> {
     return this.request(`/pos/${id}/receive`, {
       method: 'POST',
-      body: JSON.stringify({ lines }),
+      body: JSON.stringify({ lines, skip_inspection: skipInspection }),
     });
+  }
+
+  // Receiving/Inspection
+  async getReceivingInspections(status?: string): Promise<ReceivingInspection[]> {
+    const url = `/receiving${status ? `?status=${status}` : ''}`;
+    return this.request(url);
+  }
+
+  async inspectReceiving(id: number, data: { qty_passed: number; qty_failed: number; qty_on_hold: number; inspector?: string; notes?: string }): Promise<ReceivingInspection> {
+    return this.request(`/receiving/${id}/inspect`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Where-used
+  async getPartWhereUsed(ipn: string): Promise<WhereUsedEntry[]> {
+    return this.request(`/parts/${ipn}/where-used`);
   }
 
   async generatePOFromWorkOrder(woId: string, vendorId: string): Promise<{ po_id: string; lines: number }> {
@@ -912,6 +990,63 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ test_email: testEmail }),
     });
+  }
+
+  // Backups
+  async getBackups(): Promise<{ filename: string; size: number; created_at: string }[]> {
+    const resp: any = await this.request('/admin/backups');
+    return resp.data || resp;
+  }
+
+  async createBackup(): Promise<void> {
+    return this.request('/admin/backup', { method: 'POST' });
+  }
+
+  async deleteBackup(filename: string): Promise<void> {
+    return this.request(`/admin/backups/${filename}`, { method: 'DELETE' });
+  }
+
+  async restoreBackup(filename: string): Promise<void> {
+    return this.request('/admin/restore', {
+      method: 'POST',
+      body: JSON.stringify({ filename }),
+    });
+  }
+
+  // Auth
+  async login(username: string, password: string): Promise<{ user: { id: number; username: string; display_name: string; role: string } }> {
+    const response = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: 'Login failed' }));
+      throw new Error(body.error || 'Login failed');
+    }
+    return response.json();
+  }
+
+  async logout(): Promise<void> {
+    await fetch('/auth/logout', { method: 'POST' });
+  }
+
+  async getMe(): Promise<{ user: { id: number; username: string; display_name: string; role: string } } | null> {
+    const response = await fetch('/auth/me');
+    if (!response.ok) return null;
+    return response.json();
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const response = await fetch('/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: 'Failed to change password' }));
+      throw new Error(body.error || 'Failed to change password');
+    }
   }
 }
 

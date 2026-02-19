@@ -14,7 +14,7 @@ import {
   Layers,
   Info
 } from "lucide-react";
-import { api, type Part, type BOMNode, type PartCost } from "../lib/api";
+import { api, type Part, type BOMNode, type PartCost, type WhereUsedEntry } from "../lib/api";
 
 interface PartWithDetails extends Part {
   category?: string;

@@ -156,6 +156,7 @@ func handleReceivePO(w http.ResponseWriter, r *http.Request, id string) {
 			ID  int     `json:"id"`
 			Qty float64 `json:"qty"`
 		} `json:"lines"`
+		SkipInspection bool `json:"skip_inspection"`
 	}
 	if err := decodeBody(r, &body); err != nil { jsonErr(w, "invalid body", 400); return }
 	// Get vendor_id for price recording
@@ -165,7 +166,6 @@ func handleReceivePO(w http.ResponseWriter, r *http.Request, id string) {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	for _, l := range body.Lines {
 		db.Exec("UPDATE po_lines SET qty_received=qty_received+? WHERE id=?", l.Qty, l.ID)
-		// Also update inventory
 		var ipn string
 		var unitPrice float64
 		db.QueryRow("SELECT ipn, COALESCE(unit_price,0) FROM po_lines WHERE id=?", l.ID).Scan(&ipn, &unitPrice)
@@ -173,10 +173,18 @@ func handleReceivePO(w http.ResponseWriter, r *http.Request, id string) {
 		if ipn != "" && unitPrice > 0 {
 			recordPriceFromPO(id, ipn, unitPrice, poVendorID)
 		}
+
 		if ipn != "" {
-			db.Exec("INSERT OR IGNORE INTO inventory (ipn) VALUES (?)", ipn)
-			db.Exec("UPDATE inventory SET qty_on_hand=qty_on_hand+?,updated_at=? WHERE ipn=?", l.Qty, now, ipn)
-			db.Exec("INSERT INTO inventory_transactions (ipn,type,qty,reference,created_at) VALUES (?,?,?,?,?)", ipn, "receive", l.Qty, id, now)
+			if body.SkipInspection {
+				// Legacy behavior: directly update inventory
+				db.Exec("INSERT OR IGNORE INTO inventory (ipn) VALUES (?)", ipn)
+				db.Exec("UPDATE inventory SET qty_on_hand=qty_on_hand+?,updated_at=? WHERE ipn=?", l.Qty, now, ipn)
+				db.Exec("INSERT INTO inventory_transactions (ipn,type,qty,reference,created_at) VALUES (?,?,?,?,?)", ipn, "receive", l.Qty, id, now)
+			} else {
+				// Create receiving inspection record (inventory updated after inspection)
+				db.Exec(`INSERT INTO receiving_inspections (po_id,po_line_id,ipn,qty_received,created_at) VALUES (?,?,?,?,?)`,
+					id, l.ID, ipn, l.Qty, now)
+			}
 		}
 	}
 	// Check if all received

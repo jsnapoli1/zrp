@@ -167,6 +167,35 @@ func handleUpdateUser(w http.ResponseWriter, r *http.Request, idStr string) {
 	jsonResp(w, map[string]string{"status": "updated"})
 }
 
+func handleDeleteUser(w http.ResponseWriter, r *http.Request, idStr string) {
+	admin := requireAdmin(w, r)
+	if admin == nil {
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonErr(w, "Invalid user ID", 400)
+		return
+	}
+	if id == admin.ID {
+		jsonErr(w, "Cannot delete yourself", 400)
+		return
+	}
+	res, err := db.Exec("DELETE FROM users WHERE id = ?", id)
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		jsonErr(w, "User not found", 404)
+		return
+	}
+	// Clean up sessions
+	db.Exec("DELETE FROM sessions WHERE user_id = ?", id)
+	jsonResp(w, map[string]string{"status": "deleted"})
+}
+
 func handleResetPassword(w http.ResponseWriter, r *http.Request, idStr string) {
 	if requireAdmin(w, r) == nil {
 		return

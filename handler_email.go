@@ -81,9 +81,18 @@ func handleUpdateEmailConfig(w http.ResponseWriter, r *http.Request) {
 
 func handleTestEmail(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		To string `json:"to"`
+		To        string `json:"to"`
+		TestEmail string `json:"test_email"`
 	}
-	if err := decodeBody(r, &body); err != nil || body.To == "" {
+	if err := decodeBody(r, &body); err != nil {
+		jsonErr(w, "invalid request body", 400)
+		return
+	}
+	// Support both "to" and "test_email" field names
+	if body.To == "" {
+		body.To = body.TestEmail
+	}
+	if body.To == "" {
 		jsonErr(w, "to address required", 400)
 		return
 	}

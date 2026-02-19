@@ -15,7 +15,7 @@ import {
   XCircle,
   Settings
 } from "lucide-react";
-import { api, type ECO } from "../lib/api";
+import { api, type ECO, type ECORevision } from "../lib/api";
 
 interface ECOWithDetails extends ECO {
   affected_parts?: Array<{
@@ -62,12 +62,14 @@ function ECODetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [eco, setECO] = useState<ECOWithDetails | null>(null);
+  const [revisions, setRevisions] = useState<ECORevision[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
       fetchECODetails();
+      fetchRevisions();
     }
   }, [id]);
 
@@ -82,6 +84,16 @@ function ECODetail() {
       console.error("Failed to fetch ECO details:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchRevisions = async () => {
+    if (!id) return;
+    try {
+      const data = await api.getECORevisions(id);
+      setRevisions(data);
+    } catch (error) {
+      console.error("Failed to fetch revisions:", error);
     }
   };
 
@@ -272,6 +284,67 @@ function ECODetail() {
               </CardContent>
             </Card>
           )}
+          {/* Revision History */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Revision History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {revisions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No revisions recorded yet</p>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
+                  <div className="space-y-6">
+                    {revisions.map((rev) => (
+                      <div key={rev.id} className="relative pl-10">
+                        <div className="absolute left-2.5 top-1 h-3 w-3 rounded-full border-2 border-primary bg-background" />
+                        <div className="border rounded-md p-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono font-bold text-lg">Rev {rev.revision}</span>
+                              <Badge variant={rev.status === 'implemented' ? 'default' : rev.status === 'approved' ? 'default' : 'secondary'}>
+                                {rev.status}
+                              </Badge>
+                            </div>
+                            {rev.effectivity_date && (
+                              <span className="text-sm text-muted-foreground">
+                                Effective: {rev.effectivity_date}
+                              </span>
+                            )}
+                          </div>
+                          {rev.changes_summary && (
+                            <p className="text-sm">{rev.changes_summary}</p>
+                          )}
+                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <User className="h-3 w-3" /> Created by {rev.created_by} on {formatDate(rev.created_at)}
+                            </span>
+                            {rev.approved_by && rev.approved_at && (
+                              <span className="flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3 text-green-600" /> Approved by {rev.approved_by} on {formatDate(rev.approved_at)}
+                              </span>
+                            )}
+                            {rev.implemented_by && rev.implemented_at && (
+                              <span className="flex items-center gap-1">
+                                <Settings className="h-3 w-3 text-blue-600" /> Implemented by {rev.implemented_by} on {formatDate(rev.implemented_at)}
+                              </span>
+                            )}
+                          </div>
+                          {rev.notes && (
+                            <p className="text-xs text-muted-foreground italic">{rev.notes}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sidebar */}

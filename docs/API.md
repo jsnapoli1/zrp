@@ -14,9 +14,11 @@ ZRP uses session-based authentication with cookie tokens. API keys (Bearer token
 
 | Role | Permissions |
 |------|-------------|
-| `admin` | Full access, can manage users and API keys |
-| `user` | Read and write access to all modules |
-| `readonly` | GET requests only — POST/PUT/DELETE return 403 |
+| `admin` | Full access to all endpoints |
+| `user` | CRUD on all business objects (parts, ECOs, WOs, inventory, etc). **No access** to: user management (`/api/v1/users/*`), API key management (`/api/v1/apikeys/*`), email settings (`/api/v1/email/*`, `/api/v1/settings/email/*`). Returns 403. |
+| `readonly` | GET only on all endpoints — POST/PUT/DELETE return 403 |
+
+**Note:** Bearer token (API key) requests that bypass session auth are granted full access for backward compatibility. The RBAC middleware (`requireRBAC`) is applied after `requireAuth` in the middleware chain.
 
 ## Response Format
 
@@ -43,7 +45,7 @@ Successful responses wrap data in an envelope:
 | 201 | Created |
 | 400 | Invalid request body |
 | 401 | Unauthorized (no session or invalid API key) |
-| 403 | Forbidden (deactivated account or readonly role) |
+| 403 | Forbidden (deactivated account, insufficient role, or readonly attempting write) |
 | 404 | Resource not found |
 | 409 | Conflict (e.g., duplicate username) |
 | 500 | Server error |

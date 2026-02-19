@@ -4,11 +4,51 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// Rate limiter for login attempts: max 5 per minute per IP
+var loginLimiter = struct {
+	sync.Mutex
+	attempts map[string][]time.Time
+}{attempts: make(map[string][]time.Time)}
+
+func checkLoginRateLimit(ip string) bool {
+	loginLimiter.Lock()
+	defer loginLimiter.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Minute)
+
+	// Filter to recent attempts
+	recent := loginLimiter.attempts[ip][:0]
+	for _, t := range loginLimiter.attempts[ip] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	loginLimiter.attempts[ip] = recent
+
+	if len(recent) >= 5 {
+		return false
+	}
+
+	loginLimiter.attempts[ip] = append(loginLimiter.attempts[ip], now)
+	return true
+}
+
+func getClientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		return fwd
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return host
+}
 
 type LoginRequest struct {
 	Username string `json:"username"`
@@ -23,6 +63,11 @@ type UserResponse struct {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !checkLoginRateLimit(getClientIP(r)) {
+		jsonErr(w, "Too many login attempts. Try again in a minute.", 429)
+		return
+	}
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonErr(w, "Invalid request body", 400)
@@ -131,6 +176,57 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"user": UserResponse{ID: id, Username: username, DisplayName: displayName, Role: role},
 	})
+}
+
+func handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(ctxUserID).(int)
+	if !ok || userID == 0 {
+		jsonErr(w, "Unauthorized", 401)
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonErr(w, "Invalid request body", 400)
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		jsonErr(w, "Current and new password required", 400)
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		jsonErr(w, "New password must be at least 8 characters", 400)
+		return
+	}
+
+	var currentHash string
+	err := db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&currentHash)
+	if err != nil {
+		jsonErr(w, "User not found", 404)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.CurrentPassword)); err != nil {
+		jsonErr(w, "Current password is incorrect", 401)
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		jsonErr(w, "Failed to hash password", 500)
+		return
+	}
+
+	_, err = db.Exec("UPDATE users SET password_hash = ? WHERE id = ?", string(newHash), userID)
+	if err != nil {
+		jsonErr(w, err.Error(), 500)
+		return
+	}
+
+	jsonResp(w, map[string]string{"status": "password_changed"})
 }
 
 func generateToken() string {

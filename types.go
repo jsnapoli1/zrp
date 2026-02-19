@@ -28,6 +28,22 @@ type ECO struct {
 	NcrID        string  `json:"ncr_id,omitempty"`
 }
 
+type ECORevision struct {
+	ID              int     `json:"id"`
+	ECOID           string  `json:"eco_id"`
+	Revision        string  `json:"revision"`
+	Status          string  `json:"status"`
+	ChangesSummary  string  `json:"changes_summary"`
+	CreatedBy       string  `json:"created_by"`
+	CreatedAt       string  `json:"created_at"`
+	ApprovedBy      *string `json:"approved_by"`
+	ApprovedAt      *string `json:"approved_at"`
+	ImplementedBy   *string `json:"implemented_by"`
+	ImplementedAt   *string `json:"implemented_at"`
+	EffectivityDate *string `json:"effectivity_date"`
+	Notes           string  `json:"notes"`
+}
+
 type Document struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`

@@ -16,6 +16,7 @@ var partsDir string
 var gitplmUIURL string
 var companyName string
 var companyEmail string
+var dbFilePath string
 
 func main() {
 	pmDir := flag.String("pmDir", "", "Path to gitplm parts database directory")
@@ -26,6 +27,7 @@ func main() {
 
 	partsDir = *pmDir
 	gitplmUIURL = *gitplmUI
+	dbFilePath = *dbPath
 
 	companyName = os.Getenv("ZRP_COMPANY_NAME")
 	if companyName == "" {
@@ -41,6 +43,9 @@ func main() {
 	}
 	seedDB()
 
+	// Start auto-backup scheduler (default 2am, override with ZRP_BACKUP_TIME=HH:MM)
+	startAutoBackup(os.Getenv("ZRP_BACKUP_TIME"))
+
 	// Start background notification generator
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -54,6 +59,9 @@ func main() {
 	}()
 
 	mux := http.NewServeMux()
+
+	// WebSocket endpoint (authenticated via session cookie in requireAuth middleware)
+	mux.HandleFunc("/api/v1/ws", handleWebSocket)
 
 	// File serving (uploaded attachments)
 	mux.HandleFunc("/files/", func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +90,13 @@ func main() {
 	})
 	mux.HandleFunc("/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		handleMe(w, r)
+	})
+	mux.HandleFunc("/auth/change-password", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			handleChangePassword(w, r)
+		} else {
+			http.Error(w, "Method not allowed", 405)
+		}
 	})
 
 	// API routes
@@ -125,6 +140,8 @@ func main() {
 			handlePartBOM(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "cost" && r.Method == "GET":
 			handlePartCost(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 3 && parts[2] == "where-used" && r.Method == "GET":
+			handleWhereUsed(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdatePart(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "DELETE":
@@ -157,6 +174,12 @@ func main() {
 			handleApproveECO(w, r, parts[1])
 		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "implement" && r.Method == "POST":
 			handleImplementECO(w, r, parts[1])
+		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "revisions" && r.Method == "GET":
+			handleListECORevisions(w, r, parts[1])
+		case parts[0] == "ecos" && len(parts) == 3 && parts[2] == "revisions" && r.Method == "POST":
+			handleCreateECORevision(w, r, parts[1])
+		case parts[0] == "ecos" && len(parts) == 4 && parts[2] == "revisions" && r.Method == "GET":
+			handleGetECORevision(w, r, parts[1], parts[3])
 
 		// Documents
 		case parts[0] == "docs" && len(parts) == 1 && r.Method == "GET":
@@ -207,6 +230,12 @@ func main() {
 			handleUpdatePO(w, r, parts[1])
 		case parts[0] == "pos" && len(parts) == 3 && parts[2] == "receive" && r.Method == "POST":
 			handleReceivePO(w, r, parts[1])
+
+		// Receiving/Inspection
+		case parts[0] == "receiving" && len(parts) == 1 && r.Method == "GET":
+			handleListReceiving(w, r)
+		case parts[0] == "receiving" && len(parts) == 3 && parts[2] == "inspect" && r.Method == "POST":
+			handleInspectReceiving(w, r, parts[1])
 
 		// Work Orders
 		case parts[0] == "workorders" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":
@@ -308,15 +337,17 @@ func main() {
 		case parts[0] == "quotes" && len(parts) == 3 && parts[2] == "cost" && r.Method == "GET":
 			handleQuoteCost(w, r, parts[1])
 
-		// API Keys
-		case parts[0] == "apikeys" && len(parts) == 1 && r.Method == "GET":
+		// API Keys (supports both "apikeys" and "api-keys" paths)
+		case (parts[0] == "apikeys" || parts[0] == "api-keys") && len(parts) == 1 && r.Method == "GET":
 			handleListAPIKeys(w, r)
-		case parts[0] == "apikeys" && len(parts) == 1 && r.Method == "POST":
+		case (parts[0] == "apikeys" || parts[0] == "api-keys") && len(parts) == 1 && r.Method == "POST":
 			handleCreateAPIKey(w, r)
-		case parts[0] == "apikeys" && len(parts) == 2 && r.Method == "DELETE":
+		case (parts[0] == "apikeys" || parts[0] == "api-keys") && len(parts) == 2 && r.Method == "DELETE":
 			handleDeleteAPIKey(w, r, parts[1])
-		case parts[0] == "apikeys" && len(parts) == 2 && r.Method == "PUT":
+		case (parts[0] == "apikeys" || parts[0] == "api-keys") && len(parts) == 2 && r.Method == "PUT":
 			handleToggleAPIKey(w, r, parts[1])
+		case (parts[0] == "apikeys" || parts[0] == "api-keys") && len(parts) == 3 && parts[2] == "revoke" && r.Method == "POST":
+			handleDeleteAPIKey(w, r, parts[1])
 
 		// Users
 		case parts[0] == "users" && len(parts) == 1 && r.Method == "GET":
@@ -325,6 +356,8 @@ func main() {
 			handleCreateUser(w, r)
 		case parts[0] == "users" && len(parts) == 2 && r.Method == "PUT":
 			handleUpdateUser(w, r, parts[1])
+		case parts[0] == "users" && len(parts) == 2 && r.Method == "DELETE":
+			handleDeleteUser(w, r, parts[1])
 		case parts[0] == "users" && len(parts) == 3 && parts[2] == "password" && r.Method == "PUT":
 			handleResetPassword(w, r, parts[1])
 
@@ -386,6 +419,18 @@ func main() {
 		case parts[0] == "notifications" && len(parts) == 3 && parts[2] == "read" && r.Method == "POST":
 			handleMarkNotificationRead(w, r, parts[1])
 
+		// Backups
+		case parts[0] == "admin" && len(parts) == 2 && parts[1] == "backup" && r.Method == "POST":
+			handleCreateBackup(w, r)
+		case parts[0] == "admin" && len(parts) == 2 && parts[1] == "backups" && r.Method == "GET":
+			handleListBackups(w, r)
+		case parts[0] == "admin" && len(parts) == 3 && parts[1] == "backups" && r.Method == "GET":
+			handleDownloadBackup(w, r, parts[2])
+		case parts[0] == "admin" && len(parts) == 3 && parts[1] == "backups" && r.Method == "DELETE":
+			handleDeleteBackup(w, r, parts[2])
+		case parts[0] == "admin" && len(parts) == 2 && parts[1] == "restore" && r.Method == "POST":
+			handleRestoreBackup(w, r)
+
 		default:
 			json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
 		}
@@ -416,7 +461,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	root.Handle("/", logging(requireAuth(mux)))
+	root.Handle("/", logging(requireAuth(requireRBAC(mux))))
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("ZRP server starting on http://localhost%s", addr)

@@ -223,12 +223,42 @@ func runMigrations() error {
 			error TEXT,
 			sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS eco_revisions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			eco_id TEXT NOT NULL,
+			revision TEXT NOT NULL DEFAULT 'A',
+			status TEXT NOT NULL DEFAULT 'created',
+			changes_summary TEXT,
+			created_by TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			approved_by TEXT,
+			approved_at DATETIME,
+			implemented_by TEXT,
+			implemented_at DATETIME,
+			effectivity_date TEXT,
+			notes TEXT,
+			FOREIGN KEY (eco_id) REFERENCES ecos(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS dashboard_widgets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER DEFAULT 0,
 			widget_type TEXT NOT NULL,
 			position INTEGER DEFAULT 0,
 			enabled INTEGER DEFAULT 1
+		)`,
+		`CREATE TABLE IF NOT EXISTS receiving_inspections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			po_id TEXT NOT NULL,
+			po_line_id INTEGER NOT NULL,
+			ipn TEXT NOT NULL,
+			qty_received REAL NOT NULL DEFAULT 0,
+			qty_passed REAL NOT NULL DEFAULT 0,
+			qty_failed REAL NOT NULL DEFAULT 0,
+			qty_on_hold REAL NOT NULL DEFAULT 0,
+			inspector TEXT,
+			inspected_at DATETIME,
+			notes TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 	}
 	for _, t := range tables {

@@ -35,6 +35,7 @@ const Audit = React.lazy(() => import("./pages/Audit"));
 const Users = React.lazy(() => import("./pages/Users"));
 const APIKeys = React.lazy(() => import("./pages/APIKeys"));
 const EmailSettings = React.lazy(() => import("./pages/EmailSettings"));
+const Backups = React.lazy(() => import("./pages/Backups"));
 
 // Placeholder components for other pages
 const PlaceholderPage = ({ title }: { title: string }) => (
@@ -108,6 +109,7 @@ function App() {
             <Route path="/audit" element={<Audit />} />
             <Route path="/api-keys" element={<APIKeys />} />
             <Route path="/email-settings" element={<EmailSettings />} />
+            <Route path="/backups" element={<Backups />} />
             <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
           </Route>
         </Routes>
