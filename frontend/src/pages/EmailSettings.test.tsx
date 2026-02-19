@@ -1,7 +1,28 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "../test/test-utils";
 import userEvent from "@testing-library/user-event";
+import { mockEmailConfig } from "../test/mocks";
+
+const mockGetEmailConfig = vi.fn();
+const mockUpdateEmailConfig = vi.fn();
+const mockTestEmail = vi.fn();
+
+vi.mock("../lib/api", () => ({
+  api: {
+    getEmailConfig: (...args: any[]) => mockGetEmailConfig(...args),
+    updateEmailConfig: (...args: any[]) => mockUpdateEmailConfig(...args),
+    testEmail: (...args: any[]) => mockTestEmail(...args),
+  },
+}));
+
 import EmailSettings from "./EmailSettings";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetEmailConfig.mockResolvedValue(mockEmailConfig);
+  mockUpdateEmailConfig.mockResolvedValue(mockEmailConfig);
+  mockTestEmail.mockResolvedValue({ success: true, message: "Email sent" });
+});
 
 describe("EmailSettings", () => {
   it("renders page title after loading", async () => {
@@ -129,14 +150,16 @@ describe("EmailSettings", () => {
   it("shows mock username value", async () => {
     render(<EmailSettings />);
     await waitFor(() => {
-      expect(screen.getByDisplayValue("notifications@example.com")).toBeInTheDocument();
+      // mockEmailConfig has smtp_username and from_address both as "zrp@example.com"
+      expect(screen.getAllByDisplayValue("zrp@example.com").length).toBeGreaterThan(0);
     });
   });
 
   it("shows mock from address value", async () => {
     render(<EmailSettings />);
     await waitFor(() => {
-      expect(screen.getByDisplayValue("noreply@example.com")).toBeInTheDocument();
+      // from_address from mockEmailConfig is "zrp@example.com" - same as username
+      expect(screen.getAllByDisplayValue("zrp@example.com").length).toBeGreaterThan(0);
     });
   });
 
@@ -149,7 +172,6 @@ describe("EmailSettings", () => {
 
   it("shows loading state initially", async () => {
     render(<EmailSettings />);
-    // Loading may resolve quickly with mock data
     await waitFor(() => {
       expect(screen.getByText("Email Settings")).toBeInTheDocument();
     });
@@ -190,5 +212,86 @@ describe("EmailSettings", () => {
       const sendBtn = screen.getByText("Send Test").closest("button");
       expect(sendBtn).toBeDisabled();
     });
+  });
+
+  it("hides SMTP sections when notifications disabled", async () => {
+    const user = userEvent.setup();
+    render(<EmailSettings />);
+    await waitFor(() => {
+      expect(screen.getByText("SMTP Configuration")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Enable email notifications"));
+    await waitFor(() => {
+      expect(screen.queryByText("SMTP Configuration")).not.toBeInTheDocument();
+      expect(screen.queryByText("Sender Configuration")).not.toBeInTheDocument();
+      expect(screen.queryByText("Test Email Configuration")).not.toBeInTheDocument();
+    });
+  });
+
+  it("auto-fills SMTP settings when a preset is selected", async () => {
+    const user = userEvent.setup();
+    render(<EmailSettings />);
+    await waitFor(() => {
+      expect(screen.getByText("SMTP Provider Preset")).toBeInTheDocument();
+    });
+    const presetTrigger = screen.getByText("Choose a preset or configure manually").closest("button")!;
+    await user.click(presetTrigger);
+    await waitFor(() => {
+      expect(screen.getByText("Gmail")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Gmail"));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("smtp.gmail.com")).toBeInTheDocument();
+    });
+  });
+
+  it("saves settings and clears unsaved badge", async () => {
+    const user = userEvent.setup();
+    render(<EmailSettings />);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("smtp.example.com")).toBeInTheDocument();
+    });
+    const hostInput = screen.getByDisplayValue("smtp.example.com");
+    await user.clear(hostInput);
+    await user.type(hostInput, "new.host.com");
+    await waitFor(() => {
+      expect(screen.getByText("Unsaved Changes")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Save Settings"));
+    await waitFor(() => {
+      expect(screen.queryByText("Unsaved Changes")).not.toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
+  it("sends test email and shows success result", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    render(<EmailSettings />);
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("test@example.com")).toBeInTheDocument();
+    });
+    await user.type(screen.getByPlaceholderText("test@example.com"), "user@test.com");
+    await user.click(screen.getByText("Send Test"));
+    await waitFor(() => {
+      expect(screen.getByText("Test Successful")).toBeInTheDocument();
+      expect(screen.getByText(/Test email sent successfully to user@test.com/)).toBeInTheDocument();
+    }, { timeout: 5000 });
+    vi.spyOn(Math, "random").mockRestore();
+  });
+
+  it("sends test email and shows failure result", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(Math, "random").mockReturnValue(0.1);
+    render(<EmailSettings />);
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("test@example.com")).toBeInTheDocument();
+    });
+    await user.type(screen.getByPlaceholderText("test@example.com"), "user@test.com");
+    await user.click(screen.getByText("Send Test"));
+    await waitFor(() => {
+      expect(screen.getByText("Test Failed")).toBeInTheDocument();
+      expect(screen.getByText(/Failed to send test email/)).toBeInTheDocument();
+    }, { timeout: 5000 });
+    vi.spyOn(Math, "random").mockRestore();
   });
 });

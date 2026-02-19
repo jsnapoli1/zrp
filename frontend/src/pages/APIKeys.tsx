@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api, type APIKey as ApiAPIKey } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -80,47 +81,8 @@ function APIKeys() {
     const fetchAPIKeys = async () => {
       try {
         setLoading(true);
-        
-        // Mock data - replace with real API call
-        const mockKeys: APIKey[] = [
-          {
-            id: '1',
-            name: 'Production Integration',
-            key_prefix: 'zrp_abc123...',
-            status: 'active',
-            created_at: '2024-01-15T10:00:00Z',
-            last_used: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-            created_by: 'admin@example.com'
-          },
-          {
-            id: '2',
-            name: 'Mobile App',
-            key_prefix: 'zrp_def456...',
-            status: 'active',
-            created_at: '2024-02-01T14:30:00Z',
-            last_used: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            created_by: 'developer@example.com'
-          },
-          {
-            id: '3',
-            name: 'Legacy System',
-            key_prefix: 'zrp_ghi789...',
-            status: 'revoked',
-            created_at: '2023-12-10T09:15:00Z',
-            last_used: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-            created_by: 'admin@example.com'
-          },
-          {
-            id: '4',
-            name: 'Testing Environment',
-            key_prefix: 'zrp_jkl012...',
-            status: 'active',
-            created_at: '2024-02-10T16:45:00Z',
-            created_by: 'tester@example.com'
-          },
-        ];
-        
-        setApiKeys(mockKeys);
+        const data = await api.getAPIKeys();
+        setApiKeys(data);
       } catch (error) {
         console.error("Failed to fetch API keys:", error);
       } finally {
@@ -133,19 +95,7 @@ function APIKeys() {
 
   const handleCreateKey = async () => {
     try {
-      const fullKey = generateApiKey();
-      const keyPrefix = fullKey.substring(0, 10) + '...';
-      
-      // Mock create key - replace with real API call
-      const newKey: APIKey = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: createForm.name,
-        key_prefix: keyPrefix,
-        full_key: fullKey, // Only available at creation time
-        status: 'active',
-        created_at: new Date().toISOString(),
-        created_by: 'current_user@example.com' // Should be current user
-      };
+      const newKey = await api.createAPIKey(createForm.name);
       
       setApiKeys(prev => [...prev, newKey]);
       setShowFullKey(newKey.id);
@@ -160,7 +110,7 @@ function APIKeys() {
     if (!keyToRevoke) return;
     
     try {
-      // Mock revoke key - replace with real API call
+      await api.revokeAPIKey(keyToRevoke.id);
       setApiKeys(prev => prev.map(key => 
         key.id === keyToRevoke.id 
           ? { ...key, status: 'revoked' as const }

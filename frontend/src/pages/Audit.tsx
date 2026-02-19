@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api, type AuditLogEntry } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -6,17 +7,6 @@ import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Search, Filter, ChevronLeft, ChevronRight, Shield } from "lucide-react";
-
-interface AuditLogEntry {
-  id: string;
-  timestamp: string;
-  user: string;
-  action: string;
-  entity_type: string;
-  entity_id: string;
-  details: string;
-  ip_address?: string;
-}
 
 const entityTypes = [
   { value: 'all', label: 'All Types' },
@@ -82,77 +72,12 @@ function Audit() {
     const fetchAuditLogs = async () => {
       try {
         setLoading(true);
-        
-        // Mock data - replace with real API call
-        const mockLogs: AuditLogEntry[] = [
-          {
-            id: '1',
-            timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-            user: 'john.doe@example.com',
-            action: 'update',
-            entity_type: 'part',
-            entity_id: 'ABC-123',
-            details: 'Updated part description and cost',
-            ip_address: '192.168.1.100'
-          },
-          {
-            id: '2',
-            timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), // 4 hours ago
-            user: 'jane.smith@example.com',
-            action: 'create',
-            entity_type: 'eco',
-            entity_id: 'ECO-001',
-            details: 'Created new ECO for widget improvement',
-            ip_address: '192.168.1.101'
-          },
-          {
-            id: '3',
-            timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), // 6 hours ago
-            user: 'admin@example.com',
-            action: 'approve',
-            entity_type: 'work_order',
-            entity_id: 'WO-456',
-            details: 'Approved work order for production line maintenance',
-            ip_address: '192.168.1.102'
-          },
-          {
-            id: '4',
-            timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), // 8 hours ago
-            user: 'mike.johnson@example.com',
-            action: 'delete',
-            entity_type: 'vendor',
-            entity_id: 'VEN-789',
-            details: 'Removed inactive vendor from system',
-            ip_address: '192.168.1.103'
-          },
-          {
-            id: '5',
-            timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), // 12 hours ago
-            user: 'sarah.wilson@example.com',
-            action: 'create',
-            entity_type: 'purchase_order',
-            entity_id: 'PO-321',
-            details: 'Created purchase order for Q1 components',
-            ip_address: '192.168.1.104'
-          },
-          {
-            id: '6',
-            timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-            user: 'tom.brown@example.com',
-            action: 'login',
-            entity_type: 'user',
-            entity_id: 'tom.brown@example.com',
-            details: 'User logged into system',
-            ip_address: '192.168.1.105'
-          },
-        ];
-        
-        setAuditLogs(mockLogs);
+        const result = await api.getAuditLogs();
+        setAuditLogs(result.entries);
         
         // Extract unique users
-        const uniqueUsers = Array.from(new Set(mockLogs.map(log => log.user)));
+        const uniqueUsers = Array.from(new Set(result.entries.map(log => log.user)));
         setUsers(uniqueUsers);
-        
       } catch (error) {
         console.error("Failed to fetch audit logs:", error);
       } finally {

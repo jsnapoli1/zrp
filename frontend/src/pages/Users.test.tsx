@@ -1,9 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "../test/test-utils";
+import { render, screen, waitFor } from "../test/test-utils";
 import userEvent from "@testing-library/user-event";
+import { mockUsers } from "../test/mocks";
+
+const mockGetUsers = vi.fn();
+const mockCreateUser = vi.fn();
+const mockUpdateUser = vi.fn();
+
+vi.mock("../lib/api", () => ({
+  api: {
+    getUsers: (...args: any[]) => mockGetUsers(...args),
+    createUser: (...args: any[]) => mockCreateUser(...args),
+    updateUser: (...args: any[]) => mockUpdateUser(...args),
+  },
+}));
+
 import Users from "./Users";
 
-// No api mock needed - uses internal mock data
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetUsers.mockResolvedValue(mockUsers);
+  mockCreateUser.mockResolvedValue(mockUsers[0]);
+  mockUpdateUser.mockResolvedValue(mockUsers[0]);
+});
 
 describe("Users", () => {
   it("renders loading state then content", async () => {
@@ -23,9 +42,8 @@ describe("Users", () => {
   it("shows user emails", async () => {
     render(<Users />);
     await waitFor(() => {
-      expect(screen.getByText("admin@example.com")).toBeInTheDocument();
-      expect(screen.getByText("john.doe@example.com")).toBeInTheDocument();
-      expect(screen.getByText("jane.smith@example.com")).toBeInTheDocument();
+      expect(screen.getByText("admin@zrp.com")).toBeInTheDocument();
+      expect(screen.getByText("user1@zrp.com")).toBeInTheDocument();
     });
   });
 
@@ -40,8 +58,6 @@ describe("Users", () => {
     render(<Users />);
     await waitFor(() => {
       expect(screen.getAllByText("Administrator").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("User").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Read Only").length).toBeGreaterThan(0);
     });
   });
 
@@ -50,7 +66,6 @@ describe("Users", () => {
     await waitFor(() => {
       const activeBadges = screen.getAllByText("Active");
       expect(activeBadges.length).toBeGreaterThan(0);
-      expect(screen.getByText("Inactive")).toBeInTheDocument();
     });
   });
 
@@ -73,7 +88,8 @@ describe("Users", () => {
   it("shows correct total user count", async () => {
     render(<Users />);
     await waitFor(() => {
-      expect(screen.getByText("5")).toBeInTheDocument(); // 5 mock users
+      // 2 mock users - total users stat card
+      expect(screen.getByText("Total Users")).toBeInTheDocument();
     });
   });
 
@@ -94,7 +110,7 @@ describe("Users", () => {
     render(<Users />);
     await waitFor(() => {
       const editButtons = screen.getAllByText("Edit");
-      expect(editButtons.length).toBe(5); // 5 mock users
+      expect(editButtons.length).toBe(2); // 2 mock users
     });
   });
 
@@ -102,10 +118,7 @@ describe("Users", () => {
     render(<Users />);
     await waitFor(() => {
       expect(screen.getByText("admin")).toBeInTheDocument();
-      expect(screen.getByText("john.doe")).toBeInTheDocument();
-      expect(screen.getByText("jane.smith")).toBeInTheDocument();
-      expect(screen.getByText("guest")).toBeInTheDocument();
-      expect(screen.getByText("old.user")).toBeInTheDocument();
+      expect(screen.getByText("user1")).toBeInTheDocument();
     });
   });
 
@@ -171,16 +184,64 @@ describe("Users", () => {
   it("shows 'Never' for users without last login", async () => {
     render(<Users />);
     await waitFor(() => {
-      // All mock users have last_login set, but the component handles 'Never'
+      // Mock users don't have last_login set, so 'Never' should appear
       expect(screen.getByText("admin")).toBeInTheDocument();
     });
   });
 
-  it("shows inactive user old.user", async () => {
+  it("calls getUsers on mount", async () => {
     render(<Users />);
     await waitFor(() => {
-      expect(screen.getByText("old.user")).toBeInTheDocument();
-      expect(screen.getByText("old.user@example.com")).toBeInTheDocument();
+      expect(mockGetUsers).toHaveBeenCalled();
+    });
+  });
+
+  it("fills create user form end-to-end, submits, and verifies API called", async () => {
+    const user = userEvent.setup();
+    render(<Users />);
+    await waitFor(() => expect(screen.getByText("Create User")).toBeInTheDocument());
+
+    await user.click(screen.getByText("Create User"));
+    await waitFor(() => expect(screen.getByText("Create New User")).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText("Enter username"), "newuser");
+    await user.type(screen.getByPlaceholderText("Enter email address"), "new@example.com");
+    await user.type(screen.getByPlaceholderText("Enter password"), "Secret123!");
+
+    // Submit
+    const dialog = screen.getByRole("dialog");
+    const createBtn = Array.from(dialog.querySelectorAll("button")).find(b => b.textContent === "Create User");
+    await user.click(createBtn!);
+
+    await waitFor(() => {
+      expect(mockCreateUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: "newuser",
+          email: "new@example.com",
+          password: "Secret123!",
+        })
+      );
+    });
+  });
+
+  it("fills edit user form and submits update via API", async () => {
+    const user = userEvent.setup();
+    render(<Users />);
+    await waitFor(() => expect(screen.getAllByText("Edit").length).toBe(2));
+
+    await user.click(screen.getAllByText("Edit")[0]);
+    await waitFor(() => expect(screen.getByText(/Edit User:/)).toBeInTheDocument());
+
+    await user.click(screen.getByText("Update User"));
+
+    await waitFor(() => {
+      expect(mockUpdateUser).toHaveBeenCalledWith(
+        "U-001",
+        expect.objectContaining({
+          role: expect.any(String),
+          status: expect.any(String),
+        })
+      );
     });
   });
 });

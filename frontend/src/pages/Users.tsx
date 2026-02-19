@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -117,57 +118,8 @@ function Users() {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        
-        // Mock data - replace with real API call
-        const mockUsers: User[] = [
-          {
-            id: '1',
-            username: 'admin',
-            email: 'admin@example.com',
-            role: 'admin',
-            status: 'active',
-            last_login: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-            created_at: '2024-01-15T10:00:00Z'
-          },
-          {
-            id: '2',
-            username: 'john.doe',
-            email: 'john.doe@example.com',
-            role: 'user',
-            status: 'active',
-            last_login: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-            created_at: '2024-01-20T14:30:00Z'
-          },
-          {
-            id: '3',
-            username: 'jane.smith',
-            email: 'jane.smith@example.com',
-            role: 'user',
-            status: 'active',
-            last_login: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            created_at: '2024-02-01T09:15:00Z'
-          },
-          {
-            id: '4',
-            username: 'guest',
-            email: 'guest@example.com',
-            role: 'readonly',
-            status: 'active',
-            last_login: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-            created_at: '2024-02-10T16:45:00Z'
-          },
-          {
-            id: '5',
-            username: 'old.user',
-            email: 'old.user@example.com',
-            role: 'user',
-            status: 'inactive',
-            last_login: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-            created_at: '2023-12-01T11:20:00Z'
-          },
-        ];
-        
-        setUsers(mockUsers);
+        const data = await api.getUsers();
+        setUsers(data);
       } catch (error) {
         console.error("Failed to fetch users:", error);
       } finally {
@@ -180,15 +132,12 @@ function Users() {
 
   const handleCreateUser = async () => {
     try {
-      // Mock create user - replace with real API call
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
+      const newUser = await api.createUser({
         username: createForm.username,
         email: createForm.email,
+        password: createForm.password,
         role: createForm.role,
-        status: 'active',
-        created_at: new Date().toISOString()
-      };
+      });
       
       setUsers(prev => [...prev, newUser]);
       setCreateDialogOpen(false);
@@ -207,11 +156,13 @@ function Users() {
     if (!selectedUser) return;
     
     try {
-      // Mock edit user - replace with real API call
+      const updated = await api.updateUser(selectedUser.id, {
+        role: editForm.role,
+        status: editForm.status,
+      });
+      
       setUsers(prev => prev.map(user => 
-        user.id === selectedUser.id 
-          ? { ...user, role: editForm.role, status: editForm.status }
-          : user
+        user.id === selectedUser.id ? updated : user
       ));
       
       setEditDialogOpen(false);

@@ -1,13 +1,34 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "../test/test-utils";
 import userEvent from "@testing-library/user-event";
-import APIKeys from "./APIKeys";
+import { mockAPIKeys } from "../test/mocks";
+
+const mockGetAPIKeys = vi.fn();
+const mockCreateAPIKey = vi.fn();
+const mockRevokeAPIKey = vi.fn();
+
+vi.mock("../lib/api", () => ({
+  api: {
+    getAPIKeys: (...args: any[]) => mockGetAPIKeys(...args),
+    createAPIKey: (...args: any[]) => mockCreateAPIKey(...args),
+    revokeAPIKey: (...args: any[]) => mockRevokeAPIKey(...args),
+  },
+}));
 
 // Mock clipboard API
 Object.assign(navigator, {
   clipboard: {
     writeText: vi.fn().mockResolvedValue(undefined),
   },
+});
+
+import APIKeys from "./APIKeys";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetAPIKeys.mockResolvedValue(mockAPIKeys);
+  mockCreateAPIKey.mockResolvedValue({ ...mockAPIKeys[0], full_key: "zrp_prod_abc123def456" });
+  mockRevokeAPIKey.mockResolvedValue(undefined);
 });
 
 describe("APIKeys", () => {
@@ -29,10 +50,8 @@ describe("APIKeys", () => {
   it("renders API key list after loading", async () => {
     render(<APIKeys />);
     await waitFor(() => {
-      expect(screen.getByText("Production Integration")).toBeInTheDocument();
-      expect(screen.getByText("Mobile App")).toBeInTheDocument();
-      expect(screen.getByText("Legacy System")).toBeInTheDocument();
-      expect(screen.getByText("Testing Environment")).toBeInTheDocument();
+      expect(screen.getByText("Production API")).toBeInTheDocument();
+      expect(screen.getByText("Test API")).toBeInTheDocument();
     });
   });
 
@@ -64,7 +83,7 @@ describe("APIKeys", () => {
   it("shows correct key counts", async () => {
     render(<APIKeys />);
     await waitFor(() => {
-      expect(screen.getByText("4")).toBeInTheDocument(); // total keys
+      expect(screen.getByText("2")).toBeInTheDocument(); // total keys
     });
   });
 
@@ -81,8 +100,8 @@ describe("APIKeys", () => {
   it("shows key prefixes", async () => {
     render(<APIKeys />);
     await waitFor(() => {
-      expect(screen.getByText("zrp_abc123...")).toBeInTheDocument();
-      expect(screen.getByText("zrp_def456...")).toBeInTheDocument();
+      expect(screen.getByText("zrp_prod_")).toBeInTheDocument();
+      expect(screen.getByText("zrp_test_")).toBeInTheDocument();
     });
   });
 
@@ -90,22 +109,15 @@ describe("APIKeys", () => {
     render(<APIKeys />);
     await waitFor(() => {
       const revokeButtons = screen.getAllByText("Revoke");
-      expect(revokeButtons.length).toBe(3); // 3 active keys
-    });
-  });
-
-  it("does not show Revoke button for revoked keys", async () => {
-    render(<APIKeys />);
-    await waitFor(() => {
-      // Legacy System is revoked, should not have a Revoke button in its row
-      expect(screen.getByText("Legacy System")).toBeInTheDocument();
+      expect(revokeButtons.length).toBe(1); // 1 active key
     });
   });
 
   it("shows 'Never' for keys without last_used", async () => {
     render(<APIKeys />);
     await waitFor(() => {
-      expect(screen.getByText("Never")).toBeInTheDocument();
+      const neverTexts = screen.getAllByText("Never");
+      expect(neverTexts.length).toBeGreaterThan(0);
     });
   });
 
@@ -188,9 +200,7 @@ describe("APIKeys", () => {
       expect(screen.getByText("Yes, Revoke Key")).toBeInTheDocument();
     });
     await user.click(screen.getByText("Yes, Revoke Key"));
-    // After revocation, the revoked count should increase
     await waitFor(() => {
-      // Dialog should close
       expect(screen.queryByText("Yes, Revoke Key")).not.toBeInTheDocument();
     });
   });
@@ -198,9 +208,7 @@ describe("APIKeys", () => {
   it("shows created_by for each key", async () => {
     render(<APIKeys />);
     await waitFor(() => {
-      expect(screen.getAllByText("admin@example.com").length).toBeGreaterThan(0);
-      expect(screen.getByText("developer@example.com")).toBeInTheDocument();
-      expect(screen.getByText("tester@example.com")).toBeInTheDocument();
+      expect(screen.getAllByText("admin").length).toBeGreaterThan(0);
     });
   });
 });

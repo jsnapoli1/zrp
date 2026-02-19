@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet, Link, useLocation } from "react-router-dom";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   Building2,
@@ -114,6 +114,7 @@ const navigationItems = [
 
 export function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
@@ -252,7 +253,7 @@ export function AppLayout() {
                     key={item.url}
                     onSelect={() => {
                       setOpen(false);
-                      // Navigate to the selected item
+                      navigate(item.url);
                     }}
                   >
                     <item.icon className="mr-2 h-4 w-4" />
@@ -263,15 +264,15 @@ export function AppLayout() {
             </CommandGroup>
             <CommandSeparator />
             <CommandGroup heading="Quick Actions">
-              <CommandItem>
+              <CommandItem onSelect={() => { setOpen(false); navigate("/ecos"); }}>
                 <FileText className="mr-2 h-4 w-4" />
                 <span>Create ECO</span>
               </CommandItem>
-              <CommandItem>
+              <CommandItem onSelect={() => { setOpen(false); navigate("/work-orders"); }}>
                 <Wrench className="mr-2 h-4 w-4" />
                 <span>New Work Order</span>
               </CommandItem>
-              <CommandItem>
+              <CommandItem onSelect={() => { setOpen(false); navigate("/parts"); }}>
                 <Package className="mr-2 h-4 w-4" />
                 <span>Add Part</span>
               </CommandItem>

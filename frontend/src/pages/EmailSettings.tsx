@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -72,21 +73,10 @@ function EmailSettings() {
     const fetchEmailConfig = async () => {
       try {
         setLoading(true);
-        
-        // Mock data - replace with real API call
-        const mockConfig: EmailConfig = {
-          enabled: true,
-          smtp_host: 'smtp.example.com',
-          smtp_port: 587,
-          smtp_security: 'tls',
-          smtp_username: 'notifications@example.com',
-          smtp_password: '********', // Password should be masked
-          from_address: 'noreply@example.com',
-          from_name: 'ZRP System',
-        };
-        
-        setConfig(mockConfig);
-        setOriginalConfig(mockConfig);
+        const data = await api.getEmailConfig();
+        const configData: EmailConfig = { ...data, test_email: '' };
+        setConfig(configData);
+        setOriginalConfig(configData);
       } catch (error) {
         console.error("Failed to fetch email configuration:", error);
       } finally {
@@ -123,12 +113,10 @@ function EmailSettings() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      
-      // Mock save - replace with real API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      const { test_email, ...configToSave } = config;
+      await api.updateEmailConfig(configToSave);
       setOriginalConfig(config);
-      setTestResult(null); // Clear any previous test results
+      setTestResult(null);
     } catch (error) {
       console.error("Failed to save email configuration:", error);
     } finally {
@@ -143,17 +131,11 @@ function EmailSettings() {
       setTesting(true);
       setTestResult(null);
       
-      // Mock test email - replace with real API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Simulate random success/failure for demo
-      const success = Math.random() > 0.3;
+      const result = await api.testEmail(config.test_email);
       
       setTestResult({
-        success,
-        message: success 
-          ? `Test email sent successfully to ${config.test_email}`
-          : 'Failed to send test email. Please check your SMTP configuration.',
+        success: result.success,
+        message: result.message,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
