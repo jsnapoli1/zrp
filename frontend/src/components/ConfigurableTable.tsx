@@ -279,7 +279,7 @@ export function ConfigurableTable<T>({
                   />
                 </div>
               </TableHead>
-            ))}
+            )})}
             <TableHead className="w-10 print:hidden">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

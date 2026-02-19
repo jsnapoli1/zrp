@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { Package, DollarSign, Archive } from "lucide-react";
+import { DollarSign, Archive } from "lucide-react";
 import type { Part } from "../lib/api";
 
 interface PartMobileCardProps {

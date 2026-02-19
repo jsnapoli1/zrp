@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useIsMobile } from "../hooks/use-mobile";
 import { Card, CardContent } from "./ui/card";
 
@@ -6,7 +6,6 @@ interface ResponsiveTableWrapperProps<T> {
   data: T[];
   children: ReactNode;
   renderMobileCard?: (item: T, index: number) => ReactNode;
-  mobileBreakpoint?: number;
 }
 
 /**
@@ -23,7 +22,6 @@ export function ResponsiveTableWrapper<T>({
   data,
   children,
   renderMobileCard,
-  mobileBreakpoint = 768,
 }: ResponsiveTableWrapperProps<T>) {
   const isMobile = useIsMobile();
 
