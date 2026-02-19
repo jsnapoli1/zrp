@@ -1,12 +1,17 @@
 import { test, expect } from '@playwright/test';
 
+// Login helper function
+async function login(page: any) {
+  await page.goto('/login');
+  await page.fill('#username', 'admin');
+  await page.fill('#password', 'changeme');
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/dashboard/);
+}
+
 // Helper to login before each test
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.fill('input[type="text"], input[name="username"]', 'admin');
-  await page.fill('input[type="password"], input[name="password"]', 'changeme');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/dashboard|home/i);
+  await login(page);
 });
 
 test.describe('Category Management', () => {
