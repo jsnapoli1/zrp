@@ -399,3 +399,111 @@ func handleListAllPartChanges(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResp(w, items)
 }
+
+// updateBOMReferencesForPartIPN updates all BOM CSV files to reference a new IPN
+// when a part IPN has changed. This is a cascade operation to maintain BOM integrity.
+// Note: In typical PLM workflows, part revisions are stored as fields within the part
+// record, so BOMs reference the IPN and automatically get the latest revision.
+// This function is for edge cases where the IPN itself needs to change.
+func updateBOMReferencesForPartIPN(partsDir, oldIPN, newIPN string) error {
+	if partsDir == "" {
+		return fmt.Errorf("no parts directory configured")
+	}
+
+	// Find all CSV files that might contain BOMs
+	entries, err := os.ReadDir(partsDir)
+	if err != nil {
+		return err
+	}
+
+	var bomFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			// Check for BOM files in subdirectories
+			subDir := filepath.Join(partsDir, entry.Name())
+			csvFiles, _ := filepath.Glob(filepath.Join(subDir, "*.csv"))
+			
+			// Filter for assembly/BOM files (typically PCA-*, ASY-*, or in assemblies/ dir)
+			for _, csvFile := range csvFiles {
+				if strings.Contains(entry.Name(), "assembl") || 
+				   strings.Contains(filepath.Base(csvFile), "PCA-") ||
+				   strings.Contains(filepath.Base(csvFile), "ASY-") {
+					bomFiles = append(bomFiles, csvFile)
+				}
+			}
+		}
+	}
+
+	// Update each BOM file
+	for _, bomPath := range bomFiles {
+		if err := updateIPNInBOMFile(bomPath, oldIPN, newIPN); err != nil {
+			return fmt.Errorf("failed to update BOM %s: %w", bomPath, err)
+		}
+	}
+
+	return nil
+}
+
+// updateIPNInBOMFile updates a single BOM CSV file to replace oldIPN with newIPN
+func updateIPNInBOMFile(bomPath, oldIPN, newIPN string) error {
+	f, err := os.Open(bomPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	reader := csv.NewReader(f)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	if len(records) < 2 {
+		return nil // Empty BOM, nothing to update
+	}
+
+	// Find IPN column
+	headers := records[0]
+	ipnIdx := -1
+	for i, h := range headers {
+		if strings.EqualFold(h, "IPN") || strings.EqualFold(h, "Part Number") {
+			ipnIdx = i
+			break
+		}
+	}
+
+	if ipnIdx == -1 {
+		return nil // No IPN column found
+	}
+
+	// Update all matching IPNs
+	updated := false
+	for i := 1; i < len(records); i++ {
+		if ipnIdx < len(records[i]) && records[i][ipnIdx] == oldIPN {
+			records[i][ipnIdx] = newIPN
+			updated = true
+		}
+	}
+
+	if !updated {
+		return nil // No changes needed
+	}
+
+	// Write back to file
+	f2, err := os.Create(bomPath)
+	if err != nil {
+		return err
+	}
+	defer f2.Close()
+
+	writer := csv.NewWriter(f2)
+	defer writer.Flush()
+
+	for _, record := range records {
+		if err := writer.Write(record); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
