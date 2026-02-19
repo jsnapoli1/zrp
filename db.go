@@ -15,8 +15,16 @@ import (
 var db *sql.DB
 
 func initDB(path string) error {
+	// Close previous connection if any (prevents goroutine leaks in tests)
+	if db != nil {
+		db.Close()
+	}
 	var err error
-	db, err = sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	db, err = sql.Open("sqlite", path+sep+"_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		return err
 	}

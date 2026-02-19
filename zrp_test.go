@@ -12,18 +12,23 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func setupTestDB(t *testing.T) func() {
 	t.Helper()
-	dbFile := fmt.Sprintf("test_%s.db", t.Name())
-	os.Remove(dbFile)
-	if err := initDB(dbFile); err != nil {
+	// Use unique in-memory DB per test to avoid file locking issues
+	dbName := fmt.Sprintf("file:test_%s_%d?mode=memory&cache=shared", t.Name(), time.Now().UnixNano())
+	if err := initDB(dbName); err != nil {
 		t.Fatal(err)
 	}
 	seedDB()
 	os.MkdirAll("uploads", 0755)
-	return func() { os.Remove(dbFile) }
+	return func() {
+		if db != nil {
+			db.Close()
+		}
+	}
 }
 
 // loginAdmin logs in as admin and returns the session cookie
