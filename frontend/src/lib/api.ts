@@ -1004,6 +1004,60 @@ class ApiClient {
     });
   }
 
+  // Batch operations for Parts
+  async batchParts(ids: string[], action: 'delete' | 'archive'): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/parts/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    });
+  }
+
+  async batchUpdateParts(ids: string[], updates: Record<string, string>): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/parts/batch/update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, updates }),
+    });
+  }
+
+  // Batch operations for ECOs
+  async batchECOs(ids: string[], action: 'approve' | 'implement' | 'reject' | 'delete'): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/ecos/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    });
+  }
+
+  async batchUpdateECOs(ids: string[], updates: Record<string, string>): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/ecos/batch/update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, updates }),
+    });
+  }
+
+  // Batch operations for Purchase Orders
+  async batchPurchaseOrders(ids: string[], action: 'approve' | 'cancel' | 'delete'): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/pos/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    });
+  }
+
+  // Batch operations for Work Orders
+  async batchWorkOrders(ids: string[], action: 'complete' | 'cancel' | 'delete'): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/workorders/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    });
+  }
+
+  // Batch operations for Inventory
+  async batchInventory(ids: string[], action: 'delete'): Promise<{ success: number; failed: number; errors?: string[] }> {
+    return this.request('/inventory/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    });
+  }
+
   // Purchase Orders
   async getPurchaseOrders(): Promise<PurchaseOrder[]> {
     return this.request('/pos');

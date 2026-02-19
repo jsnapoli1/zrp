@@ -221,3 +221,117 @@ func handleBulkUpdateDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResp(w, resp)
 }
+
+func handleBulkUpdateParts(w http.ResponseWriter, r *http.Request) {
+	var req BulkUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonErr(w, "invalid body", 400)
+		return
+	}
+	if len(req.IDs) == 0 {
+		jsonErr(w, "ids required", 400)
+		return
+	}
+	if len(req.Updates) == 0 {
+		jsonErr(w, "updates required", 400)
+		return
+	}
+	for field := range req.Updates {
+		if !allowedPartUpdateFields[field] {
+			jsonErr(w, "field not allowed for bulk update: "+field, 400)
+			return
+		}
+	}
+
+	resp := BulkResponse{Errors: []string{}}
+	user := getUsername(r)
+	now := time.Now().Format("2006-01-02 15:04:05")
+
+	for _, id := range req.IDs {
+		var exists int
+		db.QueryRow("SELECT COUNT(*) FROM parts WHERE ipn=?", id).Scan(&exists)
+		if exists == 0 {
+			resp.Failed++
+			resp.Errors = append(resp.Errors, id+": not found")
+			continue
+		}
+
+		setClauses := "updated_at=?"
+		args := []interface{}{now}
+		for field, value := range req.Updates {
+			setClauses += ", " + field + "=?"
+			args = append(args, value)
+		}
+		args = append(args, id)
+		_, err := db.Exec("UPDATE parts SET "+setClauses+" WHERE ipn=?", args...)
+		if err != nil {
+			resp.Failed++
+			resp.Errors = append(resp.Errors, id+": "+err.Error())
+		} else {
+			resp.Success++
+			logAudit(db, user, "bulk_update", "part", id, fmt.Sprintf("Bulk update fields: %v", req.Updates))
+		}
+	}
+	jsonResp(w, resp)
+}
+
+func handleBulkUpdateECOs(w http.ResponseWriter, r *http.Request) {
+	var req BulkUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonErr(w, "invalid body", 400)
+		return
+	}
+	if len(req.IDs) == 0 {
+		jsonErr(w, "ids required", 400)
+		return
+	}
+	if len(req.Updates) == 0 {
+		jsonErr(w, "updates required", 400)
+		return
+	}
+	for field := range req.Updates {
+		if !allowedECOUpdateFields[field] {
+			jsonErr(w, "field not allowed for bulk update: "+field, 400)
+			return
+		}
+	}
+
+	if s, ok := req.Updates["status"]; ok {
+		validStatuses := map[string]bool{"draft": true, "open": true, "approved": true, "implemented": true, "rejected": true}
+		if !validStatuses[s] {
+			jsonErr(w, "invalid status: "+s, 400)
+			return
+		}
+	}
+
+	resp := BulkResponse{Errors: []string{}}
+	user := getUsername(r)
+	now := time.Now().Format("2006-01-02 15:04:05")
+
+	for _, id := range req.IDs {
+		var exists int
+		db.QueryRow("SELECT COUNT(*) FROM ecos WHERE id=?", id).Scan(&exists)
+		if exists == 0 {
+			resp.Failed++
+			resp.Errors = append(resp.Errors, id+": not found")
+			continue
+		}
+
+		setClauses := "updated_at=?"
+		args := []interface{}{now}
+		for field, value := range req.Updates {
+			setClauses += ", " + field + "=?"
+			args = append(args, value)
+		}
+		args = append(args, id)
+		_, err := db.Exec("UPDATE ecos SET "+setClauses+" WHERE id=?", args...)
+		if err != nil {
+			resp.Failed++
+			resp.Errors = append(resp.Errors, id+": "+err.Error())
+		} else {
+			resp.Success++
+			logAudit(db, user, "bulk_update", "eco", id, fmt.Sprintf("Bulk update fields: %v", req.Updates))
+		}
+	}
+	jsonResp(w, resp)
+}

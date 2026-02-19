@@ -198,6 +198,10 @@ func main() {
 			handleUpdatePart(w, r, parts[1])
 		case parts[0] == "parts" && len(parts) == 2 && r.Method == "DELETE":
 			handleDeletePart(w, r, parts[1])
+		case parts[0] == "parts" && len(parts) == 2 && parts[1] == "batch" && r.Method == "POST":
+			handleBulkParts(w, r)
+		case parts[0] == "parts" && len(parts) == 3 && parts[1] == "batch" && parts[2] == "update" && r.Method == "POST":
+			handleBulkUpdateParts(w, r)
 
 		// Part Changes (all)
 		case parts[0] == "part-changes" && len(parts) == 1 && r.Method == "GET":
@@ -220,8 +224,10 @@ func main() {
 		// ECOs
 		case parts[0] == "ecos" && len(parts) == 2 && parts[1] == "export" && r.Method == "GET":
 			handleExportECOs(w, r)
-		case parts[0] == "ecos" && len(parts) == 2 && parts[1] == "bulk" && r.Method == "POST":
+		case parts[0] == "ecos" && len(parts) == 2 && parts[1] == "batch" && r.Method == "POST":
 			handleBulkECOs(w, r)
+		case parts[0] == "ecos" && len(parts) == 3 && parts[1] == "batch" && parts[2] == "update" && r.Method == "POST":
+			handleBulkUpdateECOs(w, r)
 		case parts[0] == "ecos" && len(parts) == 1 && r.Method == "GET":
 			handleListECOs(w, r)
 		case parts[0] == "ecos" && len(parts) == 1 && r.Method == "POST":
@@ -314,6 +320,8 @@ func main() {
 			handleUpdatePO(w, r, parts[1])
 		case parts[0] == "pos" && len(parts) == 3 && parts[2] == "receive" && r.Method == "POST":
 			handleReceivePO(w, r, parts[1])
+		case parts[0] == "pos" && len(parts) == 2 && parts[1] == "batch" && r.Method == "POST":
+			handleBulkPurchaseOrders(w, r)
 
 		// Receiving/Inspection
 		case parts[0] == "receiving" && len(parts) == 1 && r.Method == "GET":
