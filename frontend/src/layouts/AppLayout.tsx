@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useGlobalUndo } from "../hooks/useUndo";
 import { useWS } from "../contexts/WebSocketContext";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -33,6 +33,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { usePermissions } from "../contexts/PermissionsContext";
 import { Button } from "../components/ui/button";
 import {
   Sidebar,
@@ -131,11 +132,39 @@ const navigationItems = [
   {
     title: "Admin",
     items: [
-      { title: "Users", url: "/users", icon: Users },
-      { title: "Settings", url: "/settings", icon: Settings },
+      { title: "Users", url: "/users", icon: Users, module: "admin" },
+      { title: "Permissions", url: "/permissions", icon: Settings, module: "admin" },
+      { title: "Settings", url: "/settings", icon: Settings, module: "admin" },
     ],
   },
 ];
+
+// Module mapping for nav items (items without module are always shown)
+const NAV_MODULE_MAP: Record<string, string> = {
+  "/parts": "parts",
+  "/ecos": "ecos",
+  "/documents": "documents",
+  "/testing": "testing",
+  "/vendors": "vendors",
+  "/purchase-orders": "purchase_orders",
+  "/rfqs": "rfqs",
+  "/procurement": "purchase_orders",
+  "/shipments": "shipments",
+  "/work-orders": "work_orders",
+  "/inventory": "inventory",
+  "/ncrs": "ncrs",
+  "/capas": "ncrs",
+  "/rmas": "rmas",
+  "/field-reports": "field_reports",
+  "/quotes": "quotes",
+  "/pricing": "pricing",
+  "/reports": "reports",
+  "/devices": "devices",
+  "/firmware": "firmware",
+  "/users": "admin",
+  "/permissions": "admin",
+  "/settings": "admin",
+};
 
 interface Notification {
   id: string;
@@ -179,12 +208,28 @@ export function AppLayout() {
   const notifRef = useRef<HTMLDivElement>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ id: number; username: string; display_name: string; role: string } | null>(null);
+  const { canView } = usePermissions();
   const [pwForm, setPwForm] = useState({ current: "", new_pw: "", confirm: "" });
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
   const { status: wsStatus } = useWS();
   useGlobalUndo();
+
+  // Filter navigation items based on user permissions
+  const filteredNav = useMemo(() => {
+    return navigationItems
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          const mod = NAV_MODULE_MAP[item.url];
+          // Items without a module mapping are always shown (Dashboard, Calendar, Scan)
+          if (!mod) return true;
+          return canView(mod);
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [canView]);
 
   useEffect(() => {
     api.getMe().then((res) => { if (res?.user) setCurrentUser(res.user); });
@@ -256,7 +301,7 @@ export function AppLayout() {
           </SidebarHeader>
 
           <SidebarContent className="flex-1 overflow-y-auto">
-            {navigationItems.map((section) => (
+            {filteredNav.map((section) => (
               <SidebarGroup key={section.title}>
                 <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
                 <SidebarGroupContent>

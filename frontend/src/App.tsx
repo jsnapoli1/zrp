@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { AppLayout } from "./layouts/AppLayout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { PermissionsProvider } from "./contexts/PermissionsContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // Lazy load all pages for code-splitting
@@ -55,6 +56,7 @@ const EmailLog = React.lazy(() => import("./pages/EmailLog"));
 const GitPLMSettings = React.lazy(() => import("./pages/GitPLMSettings"));
 const DistributorSettings = React.lazy(() => import("./pages/DistributorSettings"));
 const Settings = React.lazy(() => import("./pages/Settings"));
+const Permissions = React.lazy(() => import("./pages/Permissions"));
 const Login = React.lazy(() => import("./pages/Login"));
 const Backups = React.lazy(() => import("./pages/Backups"));
 const UndoHistory = React.lazy(() => import("./pages/UndoHistory"));
@@ -71,6 +73,7 @@ function App() {
       <Toaster position="bottom-right" richColors closeButton />
       <ErrorBoundary>
       <WebSocketProvider>
+      <PermissionsProvider>
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -143,10 +146,12 @@ function App() {
             <Route path="/backups" element={<Backups />} />
             <Route path="/undo-history" element={<UndoHistory />} />
             <Route path="/scan" element={<Scan />} />
+            <Route path="/permissions" element={<Permissions />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>
       </Suspense>
+      </PermissionsProvider>
       </WebSocketProvider>
       </ErrorBoundary>
     </Router>

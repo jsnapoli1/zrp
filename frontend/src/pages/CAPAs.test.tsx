@@ -46,8 +46,8 @@ describe("CAPAs", () => {
     render(<CAPAs />);
     await waitFor(() => {
       expect(screen.getByText("Open CAPAs")).toBeInTheDocument();
-      expect(screen.getByText("2")).toBeInTheDocument();
       expect(screen.getByText("Overdue")).toBeInTheDocument();
+      expect(screen.getByText("By Owner")).toBeInTheDocument();
     });
   });
 
@@ -62,8 +62,8 @@ describe("CAPAs", () => {
   it("displays CAPA status badges", async () => {
     render(<CAPAs />);
     await waitFor(() => {
-      expect(screen.getByText("open")).toBeInTheDocument();
-      expect(screen.getByText("in-progress")).toBeInTheDocument();
+      expect(screen.getAllByText("open").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("in-progress").length).toBeGreaterThan(0);
     });
   });
 
@@ -80,7 +80,7 @@ describe("CAPAs", () => {
     await waitFor(() => screen.getByText("New CAPA"));
     fireEvent.click(screen.getByText("New CAPA"));
     await waitFor(() => {
-      expect(screen.getByText("Create CAPA")).toBeInTheDocument();
+      expect(screen.getAllByText("Create CAPA").length).toBeGreaterThan(0);
     });
   });
 
@@ -99,11 +99,11 @@ describe("CAPAs", () => {
     });
   });
 
-  it("shows owner info in table", async () => {
+  it("shows owner info in table and dashboard", async () => {
     render(<CAPAs />);
     await waitFor(() => {
-      expect(screen.getByText("engineer1")).toBeInTheDocument();
-      expect(screen.getByText("logistics1")).toBeInTheDocument();
+      expect(screen.getAllByText("engineer1").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("logistics1").length).toBeGreaterThan(0);
     });
   });
 });

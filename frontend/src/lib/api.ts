@@ -677,6 +677,10 @@ class ApiClient {
     return this.request(`/parts/${ipn}`);
   }
 
+  /**
+   * GET /api/v1/parts/categories
+   * List part categories. Alias for /categories endpoint.
+   */
   async getCategories(): Promise<Category[]> {
     return this.request('/parts/categories');
   }
@@ -874,6 +878,11 @@ class ApiClient {
     });
   }
 
+  /**
+   * DELETE /api/v1/inventory/bulk-delete
+   * Bulk delete inventory items by IPN list.
+   * @param ipns - Array of IPNs to delete
+   */
   async bulkDeleteInventory(ipns: string[]): Promise<void> {
     return this.request('/inventory/bulk-delete', {
       method: 'DELETE',
@@ -982,6 +991,13 @@ class ApiClient {
     return this.request(`/part-changes${params}`);
   }
 
+  /**
+   * POST /api/v1/pos/generate
+   * Generate a purchase order from a work order's BOM shortages.
+   * Backend also accepts /pos/generate-from-wo.
+   * @param woId - Work order ID
+   * @param vendorId - Vendor to assign PO to
+   */
   async generatePOFromWorkOrder(woId: string, vendorId: string): Promise<{ po_id: string; lines: number }> {
     return this.request('/pos/generate', {
       method: 'POST',
@@ -1047,29 +1063,29 @@ class ApiClient {
   // CAPAs
   async getCAPAs(): Promise<CAPA[]> {
     return this.request('/capas');
-  },
+  }
 
   async getCAPA(id: string): Promise<CAPA> {
     return this.request(`/capas/${id}`);
-  },
+  }
 
   async createCAPA(capa: Partial<CAPA>): Promise<CAPA> {
     return this.request('/capas', {
       method: 'POST',
       body: JSON.stringify(capa),
     });
-  },
+  }
 
   async updateCAPA(id: string, capa: Partial<CAPA>): Promise<CAPA> {
     return this.request(`/capas/${id}`, {
       method: 'PUT',
       body: JSON.stringify(capa),
     });
-  },
+  }
 
   async getCAPADashboard(): Promise<CAPADashboard> {
     return this.request('/capas/dashboard');
-  },
+  }
 
   // RMAs
   async getRMAs(): Promise<RMA[]> {
@@ -1140,6 +1156,11 @@ class ApiClient {
     return this.request('/tests');
   }
 
+  /**
+   * GET /api/v1/tests/{idOrSerial}
+   * If id is numeric, returns single test record by ID.
+   * If non-numeric, returns all test records for that serial number.
+   */
   async getTestRecord(id: number): Promise<TestRecord> {
     return this.request(`/tests/${id}`);
   }
@@ -1203,6 +1224,11 @@ class ApiClient {
   }
 
   // Firmware Campaigns
+  /**
+   * GET /api/v1/firmware
+   * List firmware campaigns. Backend canonical path is /campaigns,
+   * /firmware is an alias for frontend compatibility.
+   */
   async getFirmwareCampaigns(): Promise<FirmwareCampaign[]> {
     return this.request('/firmware');
   }
@@ -1349,6 +1375,10 @@ class ApiClient {
     return response.json();
   }
 
+  /**
+   * GET /api/v1/attachments/{id}/download
+   * Download attachment file by ID.
+   */
   async downloadAttachment(id: string): Promise<Blob> {
     const response = await fetch(`${API_BASE}/attachments/${id}/download`);
     if (!response.ok) {
@@ -1829,5 +1859,50 @@ export interface NotificationPreference {
   threshold_value: number | null;
 }
 
+// Permission types
+export interface Permission {
+  id?: number;
+  role: string;
+  module: string;
+  action: string;
+}
+
+export interface ModuleInfo {
+  module: string;
+  actions: string[];
+}
+
 // Export singleton instance
 export const api = new ApiClient();
+
+// Permission API functions (standalone for tree-shaking)
+export async function getPermissions(role?: string): Promise<Permission[]> {
+  const url = role ? `${API_BASE}/permissions?role=${role}` : `${API_BASE}/permissions`;
+  const res = await fetch(url);
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function getMyPermissions(): Promise<Permission[]> {
+  const res = await fetch(`${API_BASE}/permissions/me`);
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function getPermissionModules(): Promise<ModuleInfo[]> {
+  const res = await fetch(`${API_BASE}/permissions/modules`);
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function setRolePermissions(role: string, permissions: { module: string; action: string }[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/permissions/${role}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ permissions }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to update permissions');
+  }
+}
