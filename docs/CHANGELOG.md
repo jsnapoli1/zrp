@@ -2,6 +2,20 @@
 
 All notable changes to ZRP are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] - 2026-02-18
+
+### Added
+- **Field Reports module** — full CRUD for tracking field failures, customer complaints, site visits, and installation notes
+- Field report types: failure, complaint, visit, installation
+- Status workflow: open → investigating → resolved → closed
+- Priority levels: low, medium, high, critical
+- Filter by status, priority, type, and date range
+- Create NCR directly from a field report (POST /api/v1/field-reports/:id/create-ncr)
+- Link field reports to ECOs for corrective action tracking
+- Detail view with edit mode, status workflow buttons, and linked NCR/ECO display
+- Go tests for all CRUD endpoints and NCR creation
+- Vitest tests for FieldReports list page component
+
 ## [0.4.0] - 2026-02-18
 
 ### Added

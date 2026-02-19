@@ -1960,3 +1960,33 @@ Returns all pricing entries for a product, ordered by creation date descending.
 `POST /api/v1/pricing/bulk-update`
 
 Body: `{"ids": [1, 2, 3], "adjustment_type": "percentage|absolute", "adjustment_value": 10}`
+
+---
+
+## Field Reports
+
+### List Field Reports
+`GET /api/v1/field-reports`
+
+Query params: `status`, `priority`, `report_type`, `from`, `to`
+
+### Create Field Report
+`POST /api/v1/field-reports`
+
+Body: `{"title": "Motor overheating", "report_type": "failure|complaint|visit|installation", "priority": "low|medium|high|critical", "customer_name": "...", "site_location": "...", "device_ipn": "...", "device_serial": "...", "reported_by": "...", "description": "...", "eco_id": "..."}`
+
+### Get Field Report
+`GET /api/v1/field-reports/:id`
+
+### Update Field Report
+`PUT /api/v1/field-reports/:id`
+
+Body: any subset of fields. Setting `status` to `resolved` auto-sets `resolved_at`.
+
+### Delete Field Report
+`DELETE /api/v1/field-reports/:id`
+
+### Create NCR from Field Report
+`POST /api/v1/field-reports/:id/create-ncr`
+
+Creates an NCR pre-populated from the field report data (title, description, device IPN/serial, severity mapped from priority). Links the NCR back to the field report via `ncr_id`.
