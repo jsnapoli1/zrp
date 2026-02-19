@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { usePermissions } from "../contexts/PermissionsContext";
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -8,6 +9,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { refresh: refreshPermissions } = usePermissions();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,6 +18,7 @@ export default function Login() {
 
     try {
       await api.login(username, password);
+      await refreshPermissions();
       navigate("/dashboard");
     } catch (err: any) {
       setError(err.message || "Invalid credentials");

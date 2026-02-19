@@ -208,7 +208,7 @@ export function AppLayout() {
   const notifRef = useRef<HTMLDivElement>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ id: number; username: string; display_name: string; role: string } | null>(null);
-  const { canView } = usePermissions();
+  const { canView, loading: permsLoading } = usePermissions();
   const [pwForm, setPwForm] = useState({ current: "", new_pw: "", confirm: "" });
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
@@ -218,6 +218,8 @@ export function AppLayout() {
 
   // Filter navigation items based on user permissions
   const filteredNav = useMemo(() => {
+    // While permissions are loading, show all items to avoid flash of missing tabs
+    if (permsLoading) return navigationItems;
     return navigationItems
       .map((section) => ({
         ...section,
@@ -229,7 +231,7 @@ export function AppLayout() {
         }),
       }))
       .filter((section) => section.items.length > 0);
-  }, [canView]);
+  }, [canView, permsLoading]);
 
   useEffect(() => {
     api.getMe().then((res) => { if (res?.user) setCurrentUser(res.user); });
