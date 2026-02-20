@@ -1,0 +1,28 @@
+--- handler_apikeys_test.go.old
++++ handler_apikeys_test.go
+@@ -90,15 +90,17 @@
+ 	if w.Code != 200 {
+ 		t.Errorf("Expected status 200, got %d", w.Code)
+ 	}
+ 
+-	var keys []APIKey
+-	if err := json.NewDecoder(w.Body).Decode(&keys); err != nil {
++	var resp struct {
++		Data []APIKey `json:"data"`
++	}
++	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+ 		t.Fatalf("Failed to decode response: %v", err)
+ 	}
+ 
+-	if len(keys) != 2 {
+-		t.Errorf("Expected 2 keys, got %d", len(keys))
++	if len(resp.Data) != 2 {
++		t.Errorf("Expected 2 keys, got %d", len(resp.Data))
+ 	}
+ 
+ 	// Verify keys are returned in descending order by created_at
+-	if keys[0].Name != "Test Key" {
+-		t.Errorf("Expected first key to be 'Test Key', got '%s'", keys[0].Name)
++	if resp.Data[0].Name != "Test Key" {
++		t.Errorf("Expected first key to be 'Test Key', got '%s'", resp.Data[0].Name)
+ 	}

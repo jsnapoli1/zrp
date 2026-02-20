@@ -1,0 +1,588 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+// setupPermissionTestDB initializes a test database with permissions
+func setupPermissionTestDB(t *testing.T) {
+	t.Helper()
+	if err := initDB("file::memory:?cache=shared"); err != nil {
+		t.Fatal("initDB:", err)
+	}
+	seedDB()
+	if err := initPermissionsTable(); err != nil {
+		t.Fatal("initPermissionsTable:", err)
+	}
+}
+
+// makeAuthRequest creates an HTTP request with role context set
+func makeAuthRequest(method, path, role string, body interface{}) *http.Request {
+	var reqBody *bytes.Buffer
+	if body != nil {
+		jsonData, _ := json.Marshal(body)
+		reqBody = bytes.NewBuffer(jsonData)
+	} else {
+		reqBody = bytes.NewBuffer(nil)
+	}
+
+	req := httptest.NewRequest(method, path, reqBody)
+	req.Header.Set("Content-Type", "application/json")
+
+	if role != "" {
+		ctx := context.WithValue(req.Context(), ctxUserID, 1)
+		ctx = context.WithValue(ctx, ctxRole, role)
+		req = req.WithContext(ctx)
+	}
+	return req
+}
+
+// execPermissionTest executes a permission test and verifies the status code
+func execPermissionTest(t *testing.T, method, path, role string, body interface{}, expectedStatus int) {
+	t.Helper()
+	req := makeAuthRequest(method, path, role, body)
+	w := httptest.NewRecorder()
+	apiRouter(w, req)
+	if w.Code != expectedStatus {
+		t.Errorf("%s %s with role=%q: got status %d, want %d. Body: %s",
+			method, path, role, w.Code, expectedStatus, w.Body.String())
+	}
+}
+
+// TestPermissionEnforcement_PartsCreate tests parts:create permission
+func TestPermissionEnforcement_PartsCreate(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Create a limited role without parts:create permission
+	limitedPerms := []Permission{
+		{Role: "limited", Module: ModuleParts, Action: ActionView},
+		// Explicitly no ActionCreate
+	}
+	if err := setRolePermissions(db, "limited", limitedPerms); err != nil {
+		t.Fatal(err)
+	}
+
+	partData := map[string]interface{}{
+		"part_number": "TEST-001",
+		"name":        "Test Part",
+	}
+
+	t.Run("User without parts:create permission cannot create parts", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/parts", "limited", partData, http.StatusForbidden)
+	})
+
+	t.Run("User role with parts:create can create parts", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/parts", "user", partData, http.StatusOK)
+	})
+
+	t.Run("Admin role with parts:create can create parts", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/parts", "admin", partData, http.StatusOK)
+	})
+
+	t.Run("Readonly role cannot create parts", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/parts", "readonly", partData, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_ECOApprove tests eco:approve permission
+func TestPermissionEnforcement_ECOApprove(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Create role without eco:approve permission
+	noApprovePerms := []Permission{
+		{Role: "no_approve", Module: ModuleECOs, Action: ActionView},
+		{Role: "no_approve", Module: ModuleECOs, Action: ActionCreate},
+		{Role: "no_approve", Module: ModuleECOs, Action: ActionEdit},
+		// Explicitly no ActionApprove
+	}
+	if err := setRolePermissions(db, "no_approve", noApprovePerms); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("User without eco:approve permission cannot approve ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/approve", "no_approve", nil, http.StatusForbidden)
+	})
+
+	t.Run("User role with eco:approve can approve ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/approve", "user", nil, http.StatusNotFound) // 404 because ECO doesn't exist, not 403
+	})
+
+	t.Run("Admin role can approve ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/approve", "admin", nil, http.StatusNotFound)
+	})
+
+	t.Run("Readonly role cannot approve ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/approve", "readonly", nil, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_ECOImplement tests eco:approve permission for implement
+func TestPermissionEnforcement_ECOImplement(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	noApprovePerms := []Permission{
+		{Role: "no_approve", Module: ModuleECOs, Action: ActionView},
+		{Role: "no_approve", Module: ModuleECOs, Action: ActionEdit},
+	}
+	if err := setRolePermissions(db, "no_approve", noApprovePerms); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("User without eco:approve permission cannot implement ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/implement", "no_approve", nil, http.StatusForbidden)
+	})
+
+	t.Run("Admin can implement ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/implement", "admin", nil, http.StatusNotFound)
+	})
+}
+
+// TestPermissionEnforcement_PODelete tests po:delete permission
+func TestPermissionEnforcement_PODelete(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Create role without po:delete permission
+	noDeletePerms := []Permission{
+		{Role: "no_delete", Module: ModulePOs, Action: ActionView},
+		{Role: "no_delete", Module: ModulePOs, Action: ActionCreate},
+		{Role: "no_delete", Module: ModulePOs, Action: ActionEdit},
+		// Explicitly no ActionDelete
+	}
+	if err := setRolePermissions(db, "no_delete", noDeletePerms); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("User without po:delete permission cannot delete POs", func(t *testing.T) {
+		execPermissionTest(t, "DELETE", "/api/v1/pos/1", "no_delete", nil, http.StatusForbidden)
+	})
+
+	t.Run("User role with po:delete can delete POs", func(t *testing.T) {
+		execPermissionTest(t, "DELETE", "/api/v1/pos/1", "user", nil, http.StatusNotFound) // 404 because PO doesn't exist
+	})
+
+	t.Run("Admin role can delete POs", func(t *testing.T) {
+		execPermissionTest(t, "DELETE", "/api/v1/pos/1", "admin", nil, http.StatusNotFound)
+	})
+
+	t.Run("Readonly role cannot delete POs", func(t *testing.T) {
+		execPermissionTest(t, "DELETE", "/api/v1/pos/1", "readonly", nil, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_ReadonlyCannotModify tests that readonly role cannot modify any data
+func TestPermissionEnforcement_ReadonlyCannotModify(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   interface{}
+	}{
+		// Parts
+		{"Create Part", "POST", "/api/v1/parts", map[string]string{"part_number": "TEST"}},
+		{"Update Part", "PUT", "/api/v1/parts/1", map[string]string{"name": "Updated"}},
+		{"Delete Part", "DELETE", "/api/v1/parts/1", nil},
+		{"Create Part Batch", "POST", "/api/v1/parts/batch", map[string]interface{}{"parts": []string{}}},
+
+		// ECOs
+		{"Create ECO", "POST", "/api/v1/ecos", map[string]string{"title": "Test ECO"}},
+		{"Update ECO", "PUT", "/api/v1/ecos/1", map[string]string{"title": "Updated"}},
+		{"Approve ECO", "POST", "/api/v1/ecos/1/approve", nil},
+		{"Implement ECO", "POST", "/api/v1/ecos/1/implement", nil},
+
+		// Documents
+		{"Create Document", "POST", "/api/v1/docs", map[string]string{"title": "Test Doc"}},
+		{"Update Document", "PUT", "/api/v1/docs/1", map[string]string{"title": "Updated"}},
+		{"Approve Document", "POST", "/api/v1/docs/1/approve", nil},
+
+		// Inventory
+		{"Inventory Transaction", "POST", "/api/v1/inventory/transact", map[string]interface{}{"part_id": 1}},
+		{"Bulk Inventory Create", "POST", "/api/v1/inventory/bulk", map[string]interface{}{}},
+		{"Bulk Inventory Delete", "DELETE", "/api/v1/inventory/bulk-delete", nil},
+
+		// Vendors
+		{"Create Vendor", "POST", "/api/v1/vendors", map[string]string{"name": "Test Vendor"}},
+		{"Update Vendor", "PUT", "/api/v1/vendors/1", map[string]string{"name": "Updated"}},
+		{"Delete Vendor", "DELETE", "/api/v1/vendors/1", nil},
+
+		// Purchase Orders
+		{"Create PO", "POST", "/api/v1/pos", map[string]interface{}{"vendor_id": 1}},
+		{"Update PO", "PUT", "/api/v1/pos/1", map[string]interface{}{"notes": "Updated"}},
+		{"PO Receive", "POST", "/api/v1/pos/1/receive", map[string]interface{}{}},
+
+		// Work Orders
+		{"Create Work Order", "POST", "/api/v1/workorders", map[string]interface{}{"title": "Test WO"}},
+		{"Update Work Order", "PUT", "/api/v1/workorders/1", map[string]interface{}{"title": "Updated"}},
+		{"Bulk Work Orders", "POST", "/api/v1/workorders/bulk", map[string]interface{}{}},
+
+		// NCRs
+		{"Create NCR", "POST", "/api/v1/ncrs", map[string]interface{}{"title": "Test NCR"}},
+		{"Update NCR", "PUT", "/api/v1/ncrs/1", map[string]interface{}{"title": "Updated"}},
+
+		// RMAs
+		{"Create RMA", "POST", "/api/v1/rmas", map[string]interface{}{"title": "Test RMA"}},
+		{"Update RMA", "PUT", "/api/v1/rmas/1", map[string]interface{}{"title": "Updated"}},
+
+		// Quotes
+		{"Create Quote", "POST", "/api/v1/quotes", map[string]interface{}{"title": "Test Quote"}},
+		{"Update Quote", "PUT", "/api/v1/quotes/1", map[string]interface{}{"title": "Updated"}},
+
+		// Pricing
+		{"Create Price", "POST", "/api/v1/pricing", map[string]interface{}{"part_id": 1}},
+		{"Update Price", "PUT", "/api/v1/pricing/1", map[string]interface{}{"price": 10.0}},
+
+		// Devices
+		{"Create Device", "POST", "/api/v1/devices", map[string]interface{}{"serial": "TEST001"}},
+		{"Update Device", "PUT", "/api/v1/devices/1", map[string]interface{}{"serial": "UPDATED"}},
+
+		// Shipments
+		{"Create Shipment", "POST", "/api/v1/shipments", map[string]interface{}{"tracking": "TEST"}},
+		{"Update Shipment", "PUT", "/api/v1/shipments/1", map[string]interface{}{"tracking": "UPDATED"}},
+	}
+
+	for _, tt := range tests {
+		t.Run("Readonly cannot "+tt.name, func(t *testing.T) {
+			execPermissionTest(t, tt.method, tt.path, "readonly", tt.body, http.StatusForbidden)
+		})
+	}
+}
+
+// TestPermissionEnforcement_ReadonlyCanView tests that readonly role can view all data
+func TestPermissionEnforcement_ReadonlyCanView(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	viewTests := []struct {
+		name string
+		path string
+	}{
+		{"View Parts", "/api/v1/parts"},
+		{"View ECOs", "/api/v1/ecos"},
+		{"View Documents", "/api/v1/docs"},
+		{"View Inventory", "/api/v1/inventory"},
+		{"View Vendors", "/api/v1/vendors"},
+		{"View POs", "/api/v1/pos"},
+		{"View Work Orders", "/api/v1/workorders"},
+		{"View NCRs", "/api/v1/ncrs"},
+		{"View RMAs", "/api/v1/rmas"},
+		{"View Quotes", "/api/v1/quotes"},
+		{"View Pricing", "/api/v1/pricing"},
+		{"View Devices", "/api/v1/devices"},
+		{"View Shipments", "/api/v1/shipments"},
+		{"View Field Reports", "/api/v1/field-reports"},
+		{"View RFQs", "/api/v1/rfqs"},
+		{"View Tests", "/api/v1/tests"},
+		{"View Users", "/api/v1/users"},
+	}
+
+	for _, tt := range viewTests {
+		t.Run("Readonly can "+tt.name, func(t *testing.T) {
+			execPermissionTest(t, "GET", tt.path, "readonly", nil, http.StatusOK)
+		})
+	}
+}
+
+// TestPermissionEnforcement_AdminFullAccess tests that admin role can do everything
+func TestPermissionEnforcement_AdminFullAccess(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	adminTests := []struct {
+		name   string
+		method string
+		path   string
+		body   interface{}
+		expect int // Expected status (200 OK or 404 NotFound, not 403 Forbidden)
+	}{
+		// Parts module - all actions
+		{"Create Part", "POST", "/api/v1/parts", map[string]string{"part_number": "ADMIN-001", "name": "Admin Part"}, http.StatusOK},
+		{"View Parts", "GET", "/api/v1/parts", nil, http.StatusOK},
+		{"Update Part", "PUT", "/api/v1/parts/999", map[string]string{"name": "Updated"}, http.StatusNotFound},
+		{"Delete Part", "DELETE", "/api/v1/parts/999", nil, http.StatusNotFound},
+
+		// ECOs module
+		{"Create ECO", "POST", "/api/v1/ecos", map[string]string{"title": "Admin ECO"}, http.StatusOK},
+		{"View ECOs", "GET", "/api/v1/ecos", nil, http.StatusOK},
+		{"Approve ECO", "POST", "/api/v1/ecos/999/approve", nil, http.StatusNotFound},
+		{"Implement ECO", "POST", "/api/v1/ecos/999/implement", nil, http.StatusNotFound},
+
+		// Documents
+		{"Create Doc", "POST", "/api/v1/docs", map[string]string{"title": "Admin Doc"}, http.StatusOK},
+		{"Approve Doc", "POST", "/api/v1/docs/999/approve", nil, http.StatusNotFound},
+
+		// Inventory
+		{"Inventory Transact", "POST", "/api/v1/inventory/transact", map[string]interface{}{"part_id": 1, "quantity": 10, "type": "in"}, http.StatusNotFound},
+
+		// Vendors
+		{"Create Vendor", "POST", "/api/v1/vendors", map[string]string{"name": "Admin Vendor"}, http.StatusOK},
+		{"Delete Vendor", "DELETE", "/api/v1/vendors/999", nil, http.StatusNotFound},
+
+		// POs
+		{"Create PO", "POST", "/api/v1/pos", map[string]interface{}{"vendor_id": 1}, http.StatusNotFound},
+		{"Update PO", "PUT", "/api/v1/pos/999", map[string]interface{}{"notes": "Admin update"}, http.StatusNotFound},
+		{"Delete PO", "DELETE", "/api/v1/pos/999", nil, http.StatusNotFound},
+
+		// Admin-only endpoints
+		{"View Users", "GET", "/api/v1/users", nil, http.StatusOK},
+		{"Create User", "POST", "/api/v1/users", map[string]interface{}{"username": "testadmin", "password": "Password123!"}, http.StatusOK},
+		{"View API Keys", "GET", "/api/v1/apikeys", nil, http.StatusOK},
+		{"Create API Key", "POST", "/api/v1/apikeys", map[string]string{"name": "Test Key"}, http.StatusOK},
+		{"View Settings", "GET", "/api/v1/settings/general", nil, http.StatusOK},
+		{"Update Settings", "PUT", "/api/v1/settings/general", map[string]interface{}{"company_name": "Test Co"}, http.StatusOK},
+	}
+
+	for _, tt := range adminTests {
+		t.Run("Admin can "+tt.name, func(t *testing.T) {
+			req := makeAuthRequest(tt.method, tt.path, "admin", tt.body)
+			w := httptest.NewRecorder()
+			apiRouter(w, req)
+
+			if w.Code == http.StatusForbidden {
+				t.Errorf("Admin should not get 403 Forbidden for %s %s, got status %d", tt.method, tt.path, w.Code)
+			}
+
+			if tt.expect == http.StatusOK && w.Code != http.StatusOK {
+				// Allow 404 for non-existent resources, but fail on other errors
+				if w.Code != http.StatusNotFound {
+					t.Errorf("%s %s: got status %d, want %d or 404. Body: %s",
+						tt.method, tt.path, w.Code, tt.expect, w.Body.String())
+				}
+			}
+		})
+	}
+}
+
+// TestPermissionEnforcement_UserRoleRestrictedFromAdmin tests user role admin access restrictions
+func TestPermissionEnforcement_UserRoleRestrictedFromAdmin(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	adminEndpoints := []struct {
+		name   string
+		method string
+		path   string
+		body   interface{}
+	}{
+		{"View Users", "GET", "/api/v1/users", nil},
+		{"Create User", "POST", "/api/v1/users", map[string]interface{}{"username": "test"}},
+		{"Update User", "PUT", "/api/v1/users/1", map[string]interface{}{"username": "updated"}},
+		{"Delete User", "DELETE", "/api/v1/users/1", nil},
+		{"View API Keys", "GET", "/api/v1/apikeys", nil},
+		{"Create API Key", "POST", "/api/v1/apikeys", map[string]string{"name": "key"}},
+		{"Delete API Key", "DELETE", "/api/v1/apikeys/1", nil},
+		{"View Email Config", "GET", "/api/v1/email/config", nil},
+		{"Update Email Config", "PUT", "/api/v1/email/config", map[string]interface{}{}},
+		{"View Settings", "GET", "/api/v1/settings/general", nil},
+		{"Update Settings", "PUT", "/api/v1/settings/general", map[string]interface{}{}},
+	}
+
+	for _, tt := range adminEndpoints {
+		t.Run("User cannot "+tt.name, func(t *testing.T) {
+			execPermissionTest(t, tt.method, tt.path, "user", tt.body, http.StatusForbidden)
+		})
+	}
+}
+
+// TestPermissionEnforcement_CustomRole tests custom role with specific permissions
+func TestPermissionEnforcement_CustomRole(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Create a "parts_editor" role with parts module permissions only
+	partsEditorPerms := []Permission{
+		{Role: "parts_editor", Module: ModuleParts, Action: ActionView},
+		{Role: "parts_editor", Module: ModuleParts, Action: ActionCreate},
+		{Role: "parts_editor", Module: ModuleParts, Action: ActionEdit},
+		{Role: "parts_editor", Module: ModuleParts, Action: ActionDelete},
+		// No other modules
+	}
+	if err := setRolePermissions(db, "parts_editor", partsEditorPerms); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("parts_editor can view parts", func(t *testing.T) {
+		execPermissionTest(t, "GET", "/api/v1/parts", "parts_editor", nil, http.StatusOK)
+	})
+
+	t.Run("parts_editor can create parts", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/parts", "parts_editor",
+			map[string]string{"part_number": "PE-001", "name": "Test"}, http.StatusOK)
+	})
+
+	t.Run("parts_editor can edit parts", func(t *testing.T) {
+		execPermissionTest(t, "PUT", "/api/v1/parts/1", "parts_editor",
+			map[string]string{"name": "Updated"}, http.StatusNotFound) // 404 ok, not 403
+	})
+
+	t.Run("parts_editor can delete parts", func(t *testing.T) {
+		execPermissionTest(t, "DELETE", "/api/v1/parts/1", "parts_editor", nil, http.StatusNotFound)
+	})
+
+	t.Run("parts_editor cannot view ECOs", func(t *testing.T) {
+		execPermissionTest(t, "GET", "/api/v1/ecos", "parts_editor", nil, http.StatusForbidden)
+	})
+
+	t.Run("parts_editor cannot create vendors", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/vendors", "parts_editor",
+			map[string]string{"name": "Vendor"}, http.StatusForbidden)
+	})
+
+	t.Run("parts_editor cannot access inventory", func(t *testing.T) {
+		execPermissionTest(t, "GET", "/api/v1/inventory", "parts_editor", nil, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_PermissionInheritance tests that permissions work correctly across modules
+func TestPermissionEnforcement_PermissionInheritance(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Create an "approver" role with approve permission across multiple modules
+	approverPerms := []Permission{
+		{Role: "approver", Module: ModuleECOs, Action: ActionView},
+		{Role: "approver", Module: ModuleECOs, Action: ActionApprove},
+		{Role: "approver", Module: ModuleDocuments, Action: ActionView},
+		{Role: "approver", Module: ModuleDocuments, Action: ActionApprove},
+	}
+	if err := setRolePermissions(db, "approver", approverPerms); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("approver can view ECOs", func(t *testing.T) {
+		execPermissionTest(t, "GET", "/api/v1/ecos", "approver", nil, http.StatusOK)
+	})
+
+	t.Run("approver can approve ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos/1/approve", "approver", nil, http.StatusNotFound)
+	})
+
+	t.Run("approver cannot create ECOs", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/ecos", "approver",
+			map[string]string{"title": "Test"}, http.StatusForbidden)
+	})
+
+	t.Run("approver can approve documents", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/docs/1/approve", "approver", nil, http.StatusNotFound)
+	})
+
+	t.Run("approver cannot create documents", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/docs", "approver",
+			map[string]string{"title": "Test"}, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_PassthroughRoutes tests that passthrough routes work for all roles
+func TestPermissionEnforcement_PassthroughRoutes(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	passthroughRoutes := []string{
+		"/api/v1/dashboard",
+		"/api/v1/search",
+		"/api/v1/audit",
+		"/api/v1/calendar",
+		"/api/v1/notifications",
+		"/api/v1/config",
+	}
+
+	roles := []string{"admin", "user", "readonly"}
+
+	for _, route := range passthroughRoutes {
+		for _, role := range roles {
+			t.Run(role+" can access "+route, func(t *testing.T) {
+				execPermissionTest(t, "GET", route, role, nil, http.StatusOK)
+			})
+		}
+	}
+}
+
+// TestPermissionEnforcement_MultipleActionsOnModule tests multiple actions on a single module
+func TestPermissionEnforcement_MultipleActionsOnModule(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Role with view and create but not edit or delete
+	viewCreatePerms := []Permission{
+		{Role: "view_create", Module: ModuleVendors, Action: ActionView},
+		{Role: "view_create", Module: ModuleVendors, Action: ActionCreate},
+	}
+	if err := setRolePermissions(db, "view_create", viewCreatePerms); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("view_create can view vendors", func(t *testing.T) {
+		execPermissionTest(t, "GET", "/api/v1/vendors", "view_create", nil, http.StatusOK)
+	})
+
+	t.Run("view_create can create vendors", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/vendors", "view_create",
+			map[string]string{"name": "Test Vendor"}, http.StatusOK)
+	})
+
+	t.Run("view_create cannot edit vendors", func(t *testing.T) {
+		execPermissionTest(t, "PUT", "/api/v1/vendors/1", "view_create",
+			map[string]string{"name": "Updated"}, http.StatusForbidden)
+	})
+
+	t.Run("view_create cannot delete vendors", func(t *testing.T) {
+		execPermissionTest(t, "DELETE", "/api/v1/vendors/1", "view_create", nil, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_CategoryManagement tests parts category permissions
+func TestPermissionEnforcement_CategoryManagement(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Categories are part of the parts module
+	t.Run("user can create categories", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/categories", "user",
+			map[string]interface{}{"name": "Test Category"}, http.StatusOK)
+	})
+
+	t.Run("readonly cannot create categories", func(t *testing.T) {
+		execPermissionTest(t, "POST", "/api/v1/categories", "readonly",
+			map[string]interface{}{"name": "Test Category"}, http.StatusForbidden)
+	})
+
+	t.Run("user without parts:create cannot create categories", func(t *testing.T) {
+		noCreatePerms := []Permission{
+			{Role: "no_create", Module: ModuleParts, Action: ActionView},
+		}
+		if err := setRolePermissions(db, "no_create", noCreatePerms); err != nil {
+			t.Fatal(err)
+		}
+		execPermissionTest(t, "POST", "/api/v1/categories", "no_create",
+			map[string]interface{}{"name": "Test Category"}, http.StatusForbidden)
+	})
+}
+
+// TestPermissionEnforcement_ReceivingOperations tests inventory receiving permissions
+func TestPermissionEnforcement_ReceivingOperations(t *testing.T) {
+	setupPermissionTestDB(t)
+
+	// Receiving maps to inventory module
+	receivingOps := []struct {
+		name   string
+		method string
+		path   string
+		body   interface{}
+	}{
+		{"Inspect Receipt", "POST", "/api/v1/receiving/1/inspect", map[string]interface{}{"status": "passed"}},
+		{"PO Receive", "POST", "/api/v1/pos/1/receive", map[string]interface{}{"items": []interface{}{}}},
+	}
+
+	for _, op := range receivingOps {
+		t.Run("user can "+op.name, func(t *testing.T) {
+			// user role has inventory:create permission
+			req := makeAuthRequest(op.method, op.path, "user", op.body)
+			w := httptest.NewRecorder()
+			apiRouter(w, req)
+			if w.Code == http.StatusForbidden {
+				t.Errorf("user should be able to %s, got 403", op.name)
+			}
+		})
+
+		t.Run("readonly cannot "+op.name, func(t *testing.T) {
+			execPermissionTest(t, op.method, op.path, "readonly", op.body, http.StatusForbidden)
+		})
+	}
+}

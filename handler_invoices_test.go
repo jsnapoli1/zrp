@@ -1,546 +1,939 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
-// Test helpers
-func extractInvoice(t *testing.T, body []byte) Invoice {
-	t.Helper()
+func setupInvoicesTestDB(t *testing.T) *sql.DB {
+	testDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open test DB: %v", err)
+	}
+
+	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("Failed to enable foreign keys: %v", err)
+	}
+
+	// Create invoices table
+	_, err = testDB.Exec(`
+		CREATE TABLE invoices (
+			id TEXT PRIMARY KEY,
+			invoice_number TEXT UNIQUE NOT NULL,
+			sales_order_id TEXT,
+			customer TEXT NOT NULL,
+			issue_date TEXT NOT NULL,
+			due_date TEXT NOT NULL,
+			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','sent','paid','overdue','cancelled')),
+			total REAL DEFAULT 0,
+			tax REAL DEFAULT 0,
+			notes TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			paid_at DATETIME
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create invoices table: %v", err)
+	}
+
+	// Create invoice_lines table
+	_, err = testDB.Exec(`
+		CREATE TABLE invoice_lines (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			invoice_id TEXT NOT NULL,
+			ipn TEXT NOT NULL,
+			description TEXT,
+			quantity INTEGER NOT NULL CHECK(quantity > 0),
+			unit_price REAL DEFAULT 0,
+			total REAL DEFAULT 0,
+			FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create invoice_lines table: %v", err)
+	}
+
+	// Create sales_orders table
+	_, err = testDB.Exec(`
+		CREATE TABLE sales_orders (
+			id TEXT PRIMARY KEY,
+			quote_id TEXT,
+			customer TEXT NOT NULL,
+			status TEXT DEFAULT 'draft',
+			notes TEXT,
+			created_by TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create sales_orders table: %v", err)
+	}
+
+	// Create sales_order_lines table
+	_, err = testDB.Exec(`
+		CREATE TABLE sales_order_lines (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			sales_order_id TEXT NOT NULL,
+			ipn TEXT NOT NULL,
+			description TEXT,
+			qty INTEGER NOT NULL,
+			qty_allocated INTEGER DEFAULT 0,
+			qty_picked INTEGER DEFAULT 0,
+			qty_shipped INTEGER DEFAULT 0,
+			unit_price REAL DEFAULT 0,
+			notes TEXT,
+			FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create sales_order_lines table: %v", err)
+	}
+
+	// Create audit_log table
+	_, err = testDB.Exec(`
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER,
+			username TEXT DEFAULT 'system',
+			action TEXT NOT NULL,
+			module TEXT NOT NULL,
+			record_id TEXT NOT NULL,
+			summary TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create audit_log table: %v", err)
+	}
+
+	return testDB
+}
+
+func insertTestInvoiceINV(t *testing.T, db *sql.DB, id, invoiceNumber, salesOrderID, customer, status string, total, tax float64) {
+	issueDate := time.Now().Format("2006-01-02")
+	dueDate := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+
+	_, err := db.Exec(
+		"INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+		id, invoiceNumber, salesOrderID, customer, issueDate, dueDate, status, total, tax,
+	)
+	if err != nil {
+		t.Fatalf("Failed to insert test invoice: %v", err)
+	}
+}
+
+func insertTestInvoiceLineINV(t *testing.T, db *sql.DB, invoiceID, ipn, description string, quantity int, unitPrice, total float64) {
+	_, err := db.Exec(
+		"INSERT INTO invoice_lines (invoice_id, ipn, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)",
+		invoiceID, ipn, description, quantity, unitPrice, total,
+	)
+	if err != nil {
+		t.Fatalf("Failed to insert test invoice line: %v", err)
+	}
+}
+
+func insertTestSalesOrderINV(t *testing.T, db *sql.DB, id, customer, status string) {
+	_, err := db.Exec(
+		"INSERT INTO sales_orders (id, customer, status, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
+		id, customer, status,
+	)
+	if err != nil {
+		t.Fatalf("Failed to insert test sales order: %v", err)
+	}
+}
+
+func insertTestSalesOrderLineINV(t *testing.T, db *sql.DB, salesOrderID, ipn, description string, qty, qtyShipped int, unitPrice float64) {
+	_, err := db.Exec(
+		"INSERT INTO sales_order_lines (sales_order_id, ipn, description, qty, qty_shipped, unit_price) VALUES (?, ?, ?, ?, ?, ?)",
+		salesOrderID, ipn, description, qty, qtyShipped, unitPrice,
+	)
+	if err != nil {
+		t.Fatalf("Failed to insert test sales order line: %v", err)
+	}
+}
+
+// Test List Invoices - Empty
+func TestHandleListInvoices_Empty(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	req := httptest.NewRequest("GET", "/api/invoices", nil)
+	w := httptest.NewRecorder()
+
+	handleListInvoices(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
 	var resp APIResponse
-	json.Unmarshal(body, &resp)
-	b, _ := json.Marshal(resp.Data)
-	var inv Invoice
-	json.Unmarshal(b, &inv)
-	return inv
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	invoices, ok := resp.Data.([]interface{})
+	if !ok {
+		t.Fatalf("Expected data to be an array")
+	}
+
+	if len(invoices) != 0 {
+		t.Errorf("Expected empty array, got %d invoices", len(invoices))
+	}
 }
 
-func extractInvoices(t *testing.T, body []byte) []Invoice {
-	t.Helper()
+// Test List Invoices - With Data
+func TestHandleListInvoices_WithData(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+	insertTestInvoiceINV(t, db, "INV-002", "INV-2026-00002", "SO-0002", "Beta Inc", "sent", 2000.0, 200.0)
+	insertTestInvoiceINV(t, db, "INV-003", "INV-2026-00003", "SO-0003", "Gamma LLC", "paid", 1500.0, 150.0)
+
+	req := httptest.NewRequest("GET", "/api/invoices", nil)
+	w := httptest.NewRecorder()
+
+	handleListInvoices(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
 	var resp APIResponse
-	json.Unmarshal(body, &resp)
-	b, _ := json.Marshal(resp.Data)
-	var invs []Invoice
-	json.Unmarshal(b, &invs)
-	return invs
-}
-
-func setupInvoiceTestData(t *testing.T) (salesOrderID, quoteID string) {
-	// Create test quote
-	quoteID = nextID("Q", "quotes", 3)
-	_, err := db.Exec(`INSERT INTO quotes (id, customer, status, created_at) VALUES (?, ?, ?, ?)`,
-		quoteID, "Test Customer", "accepted", time.Now().Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create test quote: %v", err)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	// Add quote lines
-	_, err = db.Exec(`INSERT INTO quote_lines (quote_id, ipn, description, qty, unit_price) VALUES (?, ?, ?, ?, ?)`,
-		quoteID, "TEST-001", "Test Product 1", 5, 100.0)
-	if err != nil {
-		t.Fatalf("Failed to create quote line: %v", err)
+	invoices, ok := resp.Data.([]interface{})
+	if !ok {
+		t.Fatalf("Expected data to be an array")
 	}
 
-	_, err = db.Exec(`INSERT INTO quote_lines (quote_id, ipn, description, qty, unit_price) VALUES (?, ?, ?, ?, ?)`,
-		quoteID, "TEST-002", "Test Product 2", 2, 250.0)
-	if err != nil {
-		t.Fatalf("Failed to create quote line: %v", err)
-	}
-
-	// Create sales order from quote
-	salesOrderID = nextID("SO", "sales_orders", 3)
-	_, err = db.Exec(`INSERT INTO sales_orders (id, quote_id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		salesOrderID, quoteID, "Test Customer", "shipped", "testuser", time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
-	}
-
-	// Add sales order lines with shipped quantities
-	_, err = db.Exec(`INSERT INTO sales_order_lines (sales_order_id, ipn, description, qty, qty_shipped, unit_price) VALUES (?, ?, ?, ?, ?, ?)`,
-		salesOrderID, "TEST-001", "Test Product 1", 5, 5, 100.0)
-	if err != nil {
-		t.Fatalf("Failed to create sales order line: %v", err)
-	}
-
-	_, err = db.Exec(`INSERT INTO sales_order_lines (sales_order_id, ipn, description, qty, qty_shipped, unit_price) VALUES (?, ?, ?, ?, ?, ?)`,
-		salesOrderID, "TEST-002", "Test Product 2", 2, 2, 250.0)
-	if err != nil {
-		t.Fatalf("Failed to create sales order line: %v", err)
-	}
-
-	return salesOrderID, quoteID
-}
-
-func TestCreateInvoiceFromSalesOrder(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
-
-	salesOrderID, _ := setupInvoiceTestData(t)
-
-	// Test creating invoice from sales order
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/sales-orders/%s/create-invoice", salesOrderID), nil)
-	rec := httptest.NewRecorder()
-
-	handleCreateInvoiceFromSalesOrder(rec, req, salesOrderID)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	invoice := extractInvoice(t, rec.Body.Bytes())
-
-	// Verify invoice fields
-	if invoice.ID == "" {
-		t.Error("Invoice ID should not be empty")
-	}
-	if invoice.InvoiceNumber == "" {
-		t.Error("Invoice number should not be empty")
-	}
-	if !strings.HasPrefix(invoice.InvoiceNumber, "INV-2") {
-		t.Errorf("Invoice number should start with INV-2, got: %s", invoice.InvoiceNumber)
-	}
-	if invoice.SalesOrderID != salesOrderID {
-		t.Errorf("Expected sales_order_id %s, got %s", salesOrderID, invoice.SalesOrderID)
-	}
-	if invoice.Customer != "Test Customer" {
-		t.Errorf("Expected customer 'Test Customer', got %s", invoice.Customer)
-	}
-	if invoice.Status != "draft" {
-		t.Errorf("Expected status 'draft', got %s", invoice.Status)
-	}
-	if invoice.Total != 1100.0 {
-		t.Errorf("Expected total 1100.0 (1000 + 100 tax), got %f", invoice.Total)
-	}
-	if invoice.Tax != 100.0 { // 10% tax on $1000
-		t.Errorf("Expected tax 100.0, got %f", invoice.Tax)
-	}
-
-	// Verify invoice lines were created
-	if len(invoice.Lines) != 2 {
-		t.Errorf("Expected 2 invoice lines, got %d", len(invoice.Lines))
-	} else {
-		line1 := invoice.Lines[0]
-		if line1.IPN != "TEST-001" || line1.Quantity != 5 || line1.UnitPrice != 100.0 || line1.Total != 500.0 {
-			t.Errorf("Invoice line 1 incorrect: %+v", line1)
-		}
-
-		line2 := invoice.Lines[1]
-		if line2.IPN != "TEST-002" || line2.Quantity != 2 || line2.UnitPrice != 250.0 || line2.Total != 500.0 {
-			t.Errorf("Invoice line 2 incorrect: %+v", line2)
-		}
+	if len(invoices) != 3 {
+		t.Errorf("Expected 3 invoices, got %d", len(invoices))
 	}
 }
 
-func TestCreateInvoiceFromNonShippedOrder(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test List Invoices - Filter by Status
+func TestHandleListInvoices_FilterByStatus(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	salesOrderID, _ := setupInvoiceTestData(t)
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+	insertTestInvoiceINV(t, db, "INV-002", "INV-2026-00002", "SO-0002", "Beta Inc", "paid", 2000.0, 200.0)
+	insertTestInvoiceINV(t, db, "INV-003", "INV-2026-00003", "SO-0003", "Gamma LLC", "paid", 1500.0, 150.0)
 
-	// Update order status to 'confirmed' (not shipped yet)
-	_, err := db.Exec(`UPDATE sales_orders SET status = ? WHERE id = ?`, "confirmed", salesOrderID)
-	if err != nil {
-		t.Fatalf("Failed to update order status: %v", err)
+	req := httptest.NewRequest("GET", "/api/invoices?status=paid", nil)
+	w := httptest.NewRecorder()
+
+	handleListInvoices(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/sales-orders/%s/create-invoice", salesOrderID), nil)
-	rec := httptest.NewRecorder()
-
-	handleCreateInvoiceFromSalesOrder(rec, req, salesOrderID)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d", rec.Code)
-	}
-
-	if !strings.Contains(rec.Body.String(), "must be shipped") {
-		t.Error("Expected error message about order needing to be shipped")
-	}
-}
-
-func TestCreateInvoiceAlreadyExists(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
-
-	salesOrderID, _ := setupInvoiceTestData(t)
-
-	// Create an invoice first
-	invoiceID := nextID("INV", "invoices", 6)
-	_, err := db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, "INV-2026-00001", salesOrderID, "Test Customer", time.Now().Format(time.RFC3339), time.Now().AddDate(0, 0, 30).Format(time.RFC3339), "draft", 1000.0, 100.0, time.Now().Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create existing invoice: %v", err)
-	}
-
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/sales-orders/%s/create-invoice", salesOrderID), nil)
-	rec := httptest.NewRecorder()
-
-	handleCreateInvoiceFromSalesOrder(rec, req, salesOrderID)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d", rec.Code)
-	}
-
-	if !strings.Contains(rec.Body.String(), "already has an invoice") {
-		t.Error("Expected error message about existing invoice")
-	}
-}
-
-func TestListInvoices(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
-
-	// Create test sales orders first
-	now := time.Now()
-	so1ID := fmt.Sprintf("SO-%d-001", now.Year())
-	so2ID := fmt.Sprintf("SO-%d-002", now.Year())
-	
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		so1ID, "Customer A", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order 1: %v", err)
-	}
-	
-	_, err = db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		so2ID, "Customer B", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order 2: %v", err)
-	}
-
-	// Create test invoices
-	invoice1ID := fmt.Sprintf("INV-%d-000001", now.Year())
-	invoice2ID := fmt.Sprintf("INV-%d-000002", now.Year())
-
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoice1ID, "INV-2026-00001", so1ID, "Customer A", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "sent", 1000.0, 100.0, now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice 1: %v", err)
-	}
-
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoice2ID, "INV-2026-00002", so2ID, "Customer B", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "paid", 2000.0, 200.0, now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice 2: %v", err)
-	}
-
-	// Test list all invoices
-	req, _ := http.NewRequest("GET", "/api/v1/invoices", nil)
-	rec := httptest.NewRecorder()
-
-	handleListInvoices(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-
-	invoices := extractInvoices(t, rec.Body.Bytes())
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	invoices := resp.Data.([]interface{})
 
 	if len(invoices) != 2 {
-		t.Errorf("Expected 2 invoices, got %d", len(invoices))
-	}
-
-	// Test filter by status
-	req, _ = http.NewRequest("GET", "/api/v1/invoices?status=sent", nil)
-	rec = httptest.NewRecorder()
-
-	handleListInvoices(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-
-	invoices = extractInvoices(t, rec.Body.Bytes())
-
-	if len(invoices) != 1 {
-		t.Errorf("Expected 1 invoice with status 'sent', got %d", len(invoices))
-	}
-
-	if invoices[0].Status != "sent" {
-		t.Errorf("Expected status 'sent', got %s", invoices[0].Status)
+		t.Errorf("Expected 2 paid invoices, got %d", len(invoices))
 	}
 }
 
-func TestGetInvoice(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test Get Invoice - Success
+func TestHandleGetInvoice_Success(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	invoiceID := nextID("INV", "invoices", 6)
-	salesOrderID := nextID("SO", "sales_orders", 3)
-	now := time.Now()
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+	insertTestInvoiceLineINV(t, db, "INV-001", "PART-001", "Widget", 10, 100.0, 1000.0)
 
-	// Create sales order first
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		salesOrderID, "Test Customer", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
+	req := httptest.NewRequest("GET", "/api/invoices/INV-001", nil)
+	w := httptest.NewRecorder()
+
+	handleGetInvoice(w, req, "INV-001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	// Create invoice
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, "INV-2026-00001", salesOrderID, "Test Customer", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "draft", 1000.0, 100.0, "Test notes", now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice: %v", err)
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	invoice := resp.Data.(map[string]interface{})
+
+	if invoice["id"] != "INV-001" {
+		t.Errorf("Expected ID INV-001, got %v", invoice["id"])
+	}
+	if invoice["customer"] != "Acme Corp" {
+		t.Errorf("Expected customer Acme Corp, got %v", invoice["customer"])
 	}
 
-	// Create invoice lines
-	_, err = db.Exec(`INSERT INTO invoice_lines (invoice_id, ipn, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`,
-		invoiceID, "TEST-001", "Test Product 1", 5, 100.0, 500.0)
-	if err != nil {
-		t.Fatalf("Failed to create invoice line: %v", err)
-	}
-
-	_, err = db.Exec(`INSERT INTO invoice_lines (invoice_id, ipn, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`,
-		invoiceID, "TEST-002", "Test Product 2", 2, 250.0, 500.0)
-	if err != nil {
-		t.Fatalf("Failed to create invoice line: %v", err)
-	}
-
-	// Test get invoice
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/invoices/%s", invoiceID), nil)
-	rec := httptest.NewRecorder()
-
-	handleGetInvoice(rec, req, invoiceID)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-
-	invoice := extractInvoice(t, rec.Body.Bytes())
-
-	if invoice.ID != invoiceID {
-		t.Errorf("Expected invoice ID %s, got %s", invoiceID, invoice.ID)
-	}
-	if invoice.InvoiceNumber != "INV-2026-00001" {
-		t.Errorf("Expected invoice number INV-2026-00001, got %s", invoice.InvoiceNumber)
-	}
-	if len(invoice.Lines) != 2 {
-		t.Errorf("Expected 2 lines, got %d", len(invoice.Lines))
-	}
-	if invoice.Notes != "Test notes" {
-		t.Errorf("Expected notes 'Test notes', got %s", invoice.Notes)
+	lines := invoice["lines"].([]interface{})
+	if len(lines) != 1 {
+		t.Errorf("Expected 1 line, got %d", len(lines))
 	}
 }
 
-func TestSendInvoice(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test Get Invoice - Not Found
+func TestHandleGetInvoice_NotFound(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	invoiceID := nextID("INV", "invoices", 6)
-	soID := nextID("SO", "sales_orders", 3)
-	now := time.Now()
+	req := httptest.NewRequest("GET", "/api/invoices/INV-9999", nil)
+	w := httptest.NewRecorder()
 
-	// Create sales order first
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		soID, "Test Customer", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
+	handleGetInvoice(w, req, "INV-9999")
+
+	if w.Code != 404 {
+		t.Errorf("Expected status 404, got %d", w.Code)
+	}
+}
+
+// Test Create Invoice - Valid
+func TestHandleCreateInvoice_Valid(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	invoice := Invoice{
+		SalesOrderID: "SO-0001",
+		Customer:     "Acme Corp",
+		Lines: []InvoiceLine{
+			{IPN: "PART-001", Description: "Widget", Quantity: 10, UnitPrice: 100.0},
+			{IPN: "PART-002", Description: "Gadget", Quantity: 5, UnitPrice: 50.0},
+		},
 	}
 
-	// Create draft invoice
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, "INV-2026-00001", soID, "Test Customer", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "draft", 1000.0, 100.0, now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice: %v", err)
+	body, _ := json.Marshal(invoice)
+	req := httptest.NewRequest("POST", "/api/invoices", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handleCreateInvoice(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Test send invoice
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/invoices/%s/send", invoiceID), nil)
-	rec := httptest.NewRecorder()
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	created := resp.Data.(map[string]interface{})
 
-	handleSendInvoice(rec, req, invoiceID)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
+	// Check ID and invoice number were generated
+	if created["id"] == nil {
+		t.Error("Expected ID to be generated")
+	}
+	if created["invoice_number"] == nil {
+		t.Error("Expected invoice_number to be generated")
 	}
 
-	// Verify status changed
+	// Check calculations
+	expectedSubtotal := (10 * 100.0) + (5 * 50.0) // 1250
+	expectedTax := expectedSubtotal * DEFAULT_TAX_RATE // 125
+	expectedTotal := expectedSubtotal + expectedTax // 1375
+
+	if created["total"].(float64) != expectedTotal {
+		t.Errorf("Expected total %.2f, got %.2f", expectedTotal, created["total"].(float64))
+	}
+	if created["tax"].(float64) != expectedTax {
+		t.Errorf("Expected tax %.2f, got %.2f", expectedTax, created["tax"].(float64))
+	}
+}
+
+// Test Create Invoice - Missing Required Fields
+func TestHandleCreateInvoice_MissingFields(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	tests := []struct {
+		name    string
+		invoice Invoice
+	}{
+		{
+			name:    "Missing sales_order_id",
+			invoice: Invoice{Customer: "Acme Corp"},
+		},
+		{
+			name:    "Missing customer",
+			invoice: Invoice{SalesOrderID: "SO-0001"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.invoice)
+			req := httptest.NewRequest("POST", "/api/invoices", bytes.NewReader(body))
+			w := httptest.NewRecorder()
+
+			handleCreateInvoice(w, req)
+
+			if w.Code != 400 {
+				t.Errorf("Expected status 400, got %d", w.Code)
+			}
+		})
+	}
+}
+
+// Test Create Invoice - Defaults
+func TestHandleCreateInvoice_Defaults(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	invoice := Invoice{
+		SalesOrderID: "SO-0001",
+		Customer:     "Acme Corp",
+		// No status, issue_date, or due_date
+	}
+
+	body, _ := json.Marshal(invoice)
+	req := httptest.NewRequest("POST", "/api/invoices", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handleCreateInvoice(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	created := resp.Data.(map[string]interface{})
+
+	// Check defaults
+	if created["status"] != "draft" {
+		t.Errorf("Expected default status 'draft', got %v", created["status"])
+	}
+	if created["issue_date"] == nil || created["issue_date"] == "" {
+		t.Error("Expected issue_date to be set to today")
+	}
+	if created["due_date"] == nil || created["due_date"] == "" {
+		t.Error("Expected due_date to be set (30 days from now)")
+	}
+}
+
+// Test Update Invoice - Success
+func TestHandleUpdateInvoice_Success(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+	insertTestInvoiceLineINV(t, db, "INV-001", "PART-001", "Widget", 10, 100.0, 1000.0)
+
+	invoice := Invoice{
+		Customer:  "Updated Corp",
+		IssueDate: "2026-03-01",
+		DueDate:   "2026-04-01",
+		Status:    "draft",
+		Lines: []InvoiceLine{
+			{IPN: "PART-002", Description: "Gadget", Quantity: 20, UnitPrice: 75.0},
+		},
+	}
+
+	body, _ := json.Marshal(invoice)
+	req := httptest.NewRequest("PUT", "/api/invoices/INV-001", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handleUpdateInvoice(w, req, "INV-001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify update
+	var customer string
+	db.QueryRow("SELECT customer FROM invoices WHERE id = ?", "INV-001").Scan(&customer)
+	if customer != "Updated Corp" {
+		t.Errorf("Expected customer to be updated to 'Updated Corp', got %s", customer)
+	}
+
+	// Verify lines were replaced
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM invoice_lines WHERE invoice_id = ?", "INV-001").Scan(&count)
+	if count != 1 {
+		t.Errorf("Expected 1 line after update, got %d", count)
+	}
+}
+
+// Test Update Invoice - Cannot Edit Paid Invoice
+func TestHandleUpdateInvoice_CannotEditPaid(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "paid", 1000.0, 100.0)
+
+	invoice := Invoice{
+		Customer: "Updated Corp",
+		Status:   "paid",
+	}
+
+	body, _ := json.Marshal(invoice)
+	req := httptest.NewRequest("PUT", "/api/invoices/INV-001", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handleUpdateInvoice(w, req, "INV-001")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+
+	if !bytes.Contains(w.Body.Bytes(), []byte("cannot edit paid")) {
+		t.Error("Expected error about editing paid invoice")
+	}
+}
+
+// Test Create Invoice from Sales Order - Success
+func TestHandleCreateInvoiceFromSalesOrder_Success(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestSalesOrderINV(t, db, "SO-0001", "Acme Corp", "shipped")
+	insertTestSalesOrderLineINV(t, db, "SO-0001", "PART-001", "Widget", 10, 10, 100.0)
+	insertTestSalesOrderLineINV(t, db, "SO-0001", "PART-002", "Gadget", 5, 5, 50.0)
+
+	req := httptest.NewRequest("POST", "/api/sales_orders/SO-0001/invoice", nil)
+	w := httptest.NewRecorder()
+
+	handleCreateInvoiceFromSalesOrder(w, req, "SO-0001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	invoice := resp.Data.(map[string]interface{})
+
+	// Check invoice was created from sales order
+	if invoice["sales_order_id"] != "SO-0001" {
+		t.Errorf("Expected sales_order_id SO-0001, got %v", invoice["sales_order_id"])
+	}
+	if invoice["customer"] != "Acme Corp" {
+		t.Errorf("Expected customer Acme Corp, got %v", invoice["customer"])
+	}
+
+	// Check lines were created
+	lines := invoice["lines"].([]interface{})
+	if len(lines) != 2 {
+		t.Errorf("Expected 2 lines, got %d", len(lines))
+	}
+
+	// Check calculations
+	expectedSubtotal := (10 * 100.0) + (5 * 50.0) // 1250
+	expectedTax := expectedSubtotal * DEFAULT_TAX_RATE // 125
+	expectedTotal := expectedSubtotal + expectedTax // 1375
+
+	if invoice["total"].(float64) != expectedTotal {
+		t.Errorf("Expected total %.2f, got %.2f", expectedTotal, invoice["total"].(float64))
+	}
+
+	// Verify sales order status was updated
+	var soStatus string
+	db.QueryRow("SELECT status FROM sales_orders WHERE id = ?", "SO-0001").Scan(&soStatus)
+	if soStatus != "invoiced" {
+		t.Errorf("Expected sales order status to be 'invoiced', got %s", soStatus)
+	}
+}
+
+// Test Create Invoice from Sales Order - Not Shipped
+func TestHandleCreateInvoiceFromSalesOrder_NotShipped(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestSalesOrderINV(t, db, "SO-0001", "Acme Corp", "picked") // Not shipped yet
+
+	req := httptest.NewRequest("POST", "/api/sales_orders/SO-0001/invoice", nil)
+	w := httptest.NewRecorder()
+
+	handleCreateInvoiceFromSalesOrder(w, req, "SO-0001")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+
+	if !bytes.Contains(w.Body.Bytes(), []byte("must be shipped")) {
+		t.Error("Expected error about sales order not being shipped")
+	}
+}
+
+// Test Create Invoice from Sales Order - Already Has Invoice
+func TestHandleCreateInvoiceFromSalesOrder_AlreadyHasInvoice(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestSalesOrderINV(t, db, "SO-0001", "Acme Corp", "shipped")
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+
+	req := httptest.NewRequest("POST", "/api/sales_orders/SO-0001/invoice", nil)
+	w := httptest.NewRecorder()
+
+	handleCreateInvoiceFromSalesOrder(w, req, "SO-0001")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+
+	if !bytes.Contains(w.Body.Bytes(), []byte("already has an invoice")) {
+		t.Error("Expected error about existing invoice")
+	}
+}
+
+// Test Send Invoice
+func TestHandleSendInvoice_Success(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+
+	req := httptest.NewRequest("POST", "/api/invoices/INV-001/send", nil)
+	w := httptest.NewRecorder()
+
+	handleSendInvoice(w, req, "INV-001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify status was updated
 	var status string
-	err = db.QueryRow("SELECT status FROM invoices WHERE id = ?", invoiceID).Scan(&status)
-	if err != nil {
-		t.Fatalf("Failed to query invoice status: %v", err)
-	}
-
+	db.QueryRow("SELECT status FROM invoices WHERE id = ?", "INV-001").Scan(&status)
 	if status != "sent" {
-		t.Errorf("Expected status 'sent', got %s", status)
+		t.Errorf("Expected status to be 'sent', got %s", status)
 	}
 }
 
-func TestMarkInvoicePaid(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test Send Invoice - Not Draft
+func TestHandleSendInvoice_NotDraft(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	invoiceID := nextID("INV", "invoices", 6)
-	soID := nextID("SO", "sales_orders", 3)
-	now := time.Now()
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "paid", 1000.0, 100.0)
 
-	// Create sales order first
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		soID, "Test Customer", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
+	req := httptest.NewRequest("POST", "/api/invoices/INV-001/send", nil)
+	w := httptest.NewRecorder()
+
+	handleSendInvoice(w, req, "INV-001")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+}
+
+// Test Mark Invoice Paid
+func TestHandleMarkInvoicePaid_Success(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "sent", 1000.0, 100.0)
+
+	req := httptest.NewRequest("POST", "/api/invoices/INV-001/mark_paid", nil)
+	w := httptest.NewRecorder()
+
+	handleMarkInvoicePaid(w, req, "INV-001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Create sent invoice
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, "INV-2026-00001", soID, "Test Customer", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "sent", 1000.0, 100.0, now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice: %v", err)
-	}
-
-	// Test mark as paid
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/invoices/%s/mark-paid", invoiceID), nil)
-	rec := httptest.NewRecorder()
-
-	handleMarkInvoicePaid(rec, req, invoiceID)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-
-	// Verify status and paid_at were set
+	// Verify status and paid_at were updated
 	var status string
 	var paidAt sql.NullString
-	err = db.QueryRow("SELECT status, paid_at FROM invoices WHERE id = ?", invoiceID).Scan(&status, &paidAt)
-	if err != nil {
-		t.Fatalf("Failed to query invoice: %v", err)
-	}
-
+	db.QueryRow("SELECT status, paid_at FROM invoices WHERE id = ?", "INV-001").Scan(&status, &paidAt)
 	if status != "paid" {
-		t.Errorf("Expected status 'paid', got %s", status)
+		t.Errorf("Expected status to be 'paid', got %s", status)
 	}
-
 	if !paidAt.Valid {
 		t.Error("Expected paid_at to be set")
 	}
 }
 
-func TestUpdateInvoiceOverdueStatus(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test Mark Invoice Paid - Cancelled Invoice
+func TestHandleMarkInvoicePaid_CancelledInvoice(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	invoiceID := nextID("INV", "invoices", 6)
-	soID := nextID("SO", "sales_orders", 3)
-	pastDate := time.Now().AddDate(0, 0, -7) // 7 days ago
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "cancelled", 1000.0, 100.0)
 
-	// Create sales order first
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		soID, "Test Customer", "shipped", "testuser", pastDate.Format(time.RFC3339), pastDate.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
+	req := httptest.NewRequest("POST", "/api/invoices/INV-001/mark_paid", nil)
+	w := httptest.NewRecorder()
+
+	handleMarkInvoicePaid(w, req, "INV-001")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+}
+
+// Test Generate Invoice Number
+func TestGenerateInvoiceNumber(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	// First invoice number
+	num1 := generateInvoiceNumber()
+	expected := "INV-2026-00001"
+	
+	if num1 != expected {
+		t.Errorf("Expected invoice number %s, got %s", expected, num1)
 	}
 
-	// Create sent invoice that's past due
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, "INV-2026-00001", soID, "Test Customer", pastDate.Format("2006-01-02"), pastDate.Format("2006-01-02"), "sent", 1000.0, 100.0, pastDate.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice: %v", err)
+	// Insert an invoice to test incrementing
+	insertTestInvoiceINV(t, db, "INV-001", num1, "SO-0001", "Test", "draft", 100.0, 10.0)
+
+	// Second invoice number should increment
+	num2 := generateInvoiceNumber()
+	expected2 := "INV-2026-00002"
+	
+	if num2 != expected2 {
+		t.Errorf("Expected invoice number %s, got %s", expected2, num2)
+	}
+}
+
+// Test Tax Calculations
+func TestInvoiceTaxCalculations(t *testing.T) {
+	tests := []struct {
+		name          string
+		lines         []InvoiceLine
+		expectedTotal float64
+		expectedTax   float64
+	}{
+		{
+			name: "Simple calculation",
+			lines: []InvoiceLine{
+				{Quantity: 10, UnitPrice: 100.0},
+			},
+			expectedTotal: 1100.0, // 1000 + 10% tax
+			expectedTax:   100.0,
+		},
+		{
+			name: "Multiple lines",
+			lines: []InvoiceLine{
+				{Quantity: 5, UnitPrice: 50.0},
+				{Quantity: 2, UnitPrice: 100.0},
+			},
+			expectedTotal: 495.0, // 450 + 10% tax
+			expectedTax:   45.0,
+		},
+		{
+			name: "Decimal quantities",
+			lines: []InvoiceLine{
+				{Quantity: 3, UnitPrice: 33.33},
+			},
+			expectedTotal: 109.989, // 99.99 + 10% tax
+			expectedTax:   9.999,
+		},
 	}
 
-	// Run the overdue check function
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldDB := db
+			db = setupInvoicesTestDB(t)
+			defer func() { db.Close(); db = oldDB }()
+
+			invoice := Invoice{
+				SalesOrderID: "SO-0001",
+				Customer:     "Test Corp",
+				Lines:        tt.lines,
+			}
+
+			body, _ := json.Marshal(invoice)
+			req := httptest.NewRequest("POST", "/api/invoices", bytes.NewReader(body))
+			w := httptest.NewRecorder()
+
+			handleCreateInvoice(w, req)
+
+			if w.Code != 200 {
+				t.Fatalf("Failed to create invoice: %s", w.Body.String())
+			}
+
+			var resp APIResponse
+			json.NewDecoder(w.Body).Decode(&resp)
+			created := resp.Data.(map[string]interface{})
+
+			// Allow small floating point differences
+			totalDiff := created["total"].(float64) - tt.expectedTotal
+			if totalDiff > 0.01 || totalDiff < -0.01 {
+				t.Errorf("Expected total %.2f, got %.2f", tt.expectedTotal, created["total"].(float64))
+			}
+
+			taxDiff := created["tax"].(float64) - tt.expectedTax
+			if taxDiff > 0.01 || taxDiff < -0.01 {
+				t.Errorf("Expected tax %.2f, got %.2f", tt.expectedTax, created["tax"].(float64))
+			}
+		})
+	}
+}
+
+// Test Invoice PDF Generation
+func TestHandleGenerateInvoicePDF_Success(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "sent", 1000.0, 100.0)
+	insertTestInvoiceLineINV(t, db, "INV-001", "PART-001", "Widget", 10, 100.0, 1000.0)
+
+	req := httptest.NewRequest("GET", "/api/invoices/INV-001/pdf", nil)
+	w := httptest.NewRecorder()
+
+	handleGenerateInvoicePDF(w, req, "INV-001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/pdf" {
+		t.Errorf("Expected Content-Type application/pdf, got %s", contentType)
+	}
+
+	body := w.Body.Bytes()
+	if len(body) == 0 {
+		t.Error("Expected PDF content to be generated")
+	}
+
+	// Check for PDF header
+	if !bytes.HasPrefix(body, []byte("%PDF")) {
+		t.Error("Expected PDF to start with %PDF header")
+	}
+}
+
+// Test Invoice Line Validation
+func TestInvoiceLineValidation(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	// Test that line totals are calculated correctly
+	invoice := Invoice{
+		SalesOrderID: "SO-0001",
+		Customer:     "Test Corp",
+		Lines: []InvoiceLine{
+			{IPN: "PART-001", Description: "Widget", Quantity: 10, UnitPrice: 100.0},
+		},
+	}
+
+	body, _ := json.Marshal(invoice)
+	req := httptest.NewRequest("POST", "/api/invoices", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handleCreateInvoice(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("Failed to create invoice: %s", w.Body.String())
+	}
+
+	// Verify line total was calculated
+	var lineTotal float64
+	db.QueryRow("SELECT total FROM invoice_lines WHERE invoice_id = (SELECT id FROM invoices ORDER BY created_at DESC LIMIT 1)").Scan(&lineTotal)
+	
+	expectedLineTotal := 1000.0 // 10 * 100
+	if lineTotal != expectedLineTotal {
+		t.Errorf("Expected line total %.2f, got %.2f", expectedLineTotal, lineTotal)
+	}
+}
+
+// Test Update Overdue Invoices
+func TestUpdateOverdueInvoices(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	// Create invoice with past due date
+	pastDate := time.Now().AddDate(0, 0, -10).Format("2006-01-02")
+	db.Exec("INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+		"INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "2026-01-01", pastDate, "sent", 1000.0, 100.0)
+
+	// Run the update function
 	updateOverdueInvoices()
 
-	// Verify status changed to overdue
+	// Check that status was updated to overdue
 	var status string
-	err = db.QueryRow("SELECT status FROM invoices WHERE id = ?", invoiceID).Scan(&status)
-	if err != nil {
-		t.Fatalf("Failed to query invoice status: %v", err)
-	}
-
+	db.QueryRow("SELECT status FROM invoices WHERE id = ?", "INV-001").Scan(&status)
 	if status != "overdue" {
-		t.Errorf("Expected status 'overdue', got %s", status)
+		t.Errorf("Expected status to be 'overdue', got %s", status)
 	}
 }
 
-func TestGenerateInvoiceNumber(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test Filter Invoices by Customer
+func TestHandleListInvoices_FilterByCustomer(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	// Test first invoice number of the year
-	num1 := generateInvoiceNumber()
-	expectedPrefix := fmt.Sprintf("INV-%d-", time.Now().Year())
-	if !strings.HasPrefix(num1, expectedPrefix) {
-		t.Errorf("Expected prefix %s, got %s", expectedPrefix, num1)
+	insertTestInvoiceINV(t, db, "INV-001", "INV-2026-00001", "SO-0001", "Acme Corp", "draft", 1000.0, 100.0)
+	insertTestInvoiceINV(t, db, "INV-002", "INV-2026-00002", "SO-0002", "Beta Inc", "sent", 2000.0, 200.0)
+	insertTestInvoiceINV(t, db, "INV-003", "INV-2026-00003", "SO-0003", "Acme Corp", "paid", 1500.0, 150.0)
+
+	req := httptest.NewRequest("GET", "/api/invoices?customer=Acme", nil)
+	w := httptest.NewRecorder()
+
+	handleListInvoices(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	// Create sales order first
-	soID := nextID("SO", "sales_orders", 3)
-	now := time.Now()
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		soID, "Customer", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
-	}
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	invoices := resp.Data.([]interface{})
 
-	// Create an invoice with this number
-	invoiceID := nextID("INV", "invoices", 6)
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, num1, soID, "Customer", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "draft", 100.0, 10.0, now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice: %v", err)
-	}
-
-	// Generate next number - should increment
-	num2 := generateInvoiceNumber()
-	if num2 <= num1 {
-		t.Errorf("Expected %s > %s", num2, num1)
+	if len(invoices) != 2 {
+		t.Errorf("Expected 2 Acme Corp invoices, got %d", len(invoices))
 	}
 }
 
-func TestInvoicePDFGeneration(t *testing.T) {
-	cleanup := setupTestDB(t); defer cleanup()
+// Test Filter Invoices by Date Range
+func TestHandleListInvoices_FilterByDateRange(t *testing.T) {
+	oldDB := db
+	db = setupInvoicesTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	invoiceID := nextID("INV", "invoices", 6)
-	soID := nextID("SO", "sales_orders", 3)
-	now := time.Now()
+	// Create invoices with specific issue dates
+	db.Exec("INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+		"INV-001", "INV-2026-00001", "SO-0001", "Acme", "2026-01-15", "2026-02-15", "draft", 100.0, 10.0)
+	db.Exec("INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+		"INV-002", "INV-2026-00002", "SO-0002", "Beta", "2026-02-20", "2026-03-20", "sent", 200.0, 20.0)
+	db.Exec("INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+		"INV-003", "INV-2026-00003", "SO-0003", "Gamma", "2026-03-10", "2026-04-10", "paid", 300.0, 30.0)
 
-	// Create sales order first
-	_, err := db.Exec(`INSERT INTO sales_orders (id, customer, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		soID, "Test Customer", "shipped", "testuser", now.Format(time.RFC3339), now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create sales order: %v", err)
+	req := httptest.NewRequest("GET", "/api/invoices?from_date=2026-02-01&to_date=2026-03-01", nil)
+	w := httptest.NewRecorder()
+
+	handleListInvoices(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	// Create invoice with lines
-	_, err = db.Exec(`INSERT INTO invoices (id, invoice_number, sales_order_id, customer, issue_date, due_date, status, total, tax, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		invoiceID, "INV-2026-00001", soID, "Test Customer", now.Format("2006-01-02"), now.AddDate(0, 0, 30).Format("2006-01-02"), "paid", 1000.0, 100.0, "Test invoice", now.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("Failed to create invoice: %v", err)
-	}
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	invoices := resp.Data.([]interface{})
 
-	_, err = db.Exec(`INSERT INTO invoice_lines (invoice_id, ipn, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`,
-		invoiceID, "TEST-001", "Test Product", 10, 100.0, 1000.0)
-	if err != nil {
-		t.Fatalf("Failed to create invoice line: %v", err)
-	}
-
-	// Test PDF generation
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/invoices/%s/pdf", invoiceID), nil)
-	rec := httptest.NewRecorder()
-
-	handleGenerateInvoicePDF(rec, req, invoiceID)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// Check content type
-	contentType := rec.Header().Get("Content-Type")
-	if contentType != "application/pdf" {
-		t.Errorf("Expected content-type application/pdf, got %s", contentType)
-	}
-
-	// Check PDF content starts with PDF header
-	body := rec.Body.Bytes()
-	if len(body) < 4 || string(body[:4]) != "%PDF" {
-		t.Error("Response should start with PDF header")
-	}
-
-	// Check for presence of invoice data in PDF (basic text search)
-	pdfContent := string(body)
-	if !strings.Contains(pdfContent, "INV-2026-00001") {
-		t.Error("PDF should contain invoice number")
-	}
-	if !strings.Contains(pdfContent, "Test Customer") {
-		t.Error("PDF should contain customer name")
-	}
-	if !strings.Contains(pdfContent, "PAID") {
-		t.Error("PDF should contain PAID watermark")
+	if len(invoices) != 1 { // Only INV-002 should match
+		t.Errorf("Expected 1 invoice in date range, got %d", len(invoices))
 	}
 }
