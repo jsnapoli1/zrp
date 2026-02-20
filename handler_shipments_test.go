@@ -192,8 +192,14 @@ func TestShipmentPackList(t *testing.T) {
 	req := authedRequest("POST", "/api/v1/shipments", []byte(body), cookie)
 	w := httptest.NewRecorder()
 	handleCreateShipment(w, req)
+	if w.Code != 200 {
+		t.Fatalf("create shipment: %d %s", w.Code, w.Body.String())
+	}
 	var resp APIResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data == nil {
+		t.Fatalf("Expected data in create response, got nil. Response: %+v", resp)
+	}
 	shipID := resp.Data.(map[string]interface{})["id"].(string)
 
 	// Get pack list
