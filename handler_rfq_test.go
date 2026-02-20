@@ -433,6 +433,92 @@ func TestHandleCreateRFQ_Validation(t *testing.T) {
 	}
 }
 
+// Test handleUpdateRFQ - Success
+func TestHandleUpdateRFQ_Success(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestVendorRFQ(t, db, "V-001", "Vendor A")
+	insertTestRFQ(t, db, "RFQ-001", "Original Title", "draft", "user1")
+	insertTestRFQLine(t, db, "RFQ-001", "IPN-001", 50)
+
+	update := map[string]interface{}{
+		"title":    "Updated Title",
+		"due_date": "2026-06-30",
+		"notes":    "Updated notes",
+		"lines": []map[string]interface{}{
+			{"ipn": "IPN-002", "description": "New part", "qty": 100, "unit": "EA"},
+		},
+		"vendors": []map[string]interface{}{
+			{"vendor_id": "V-001"},
+		},
+	}
+
+	body, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/api/rfq/RFQ-001", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateRFQ(w, req, "RFQ-001")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify title was updated
+	var title string
+	db.QueryRow("SELECT title FROM rfqs WHERE id=?", "RFQ-001").Scan(&title)
+	if title != "Updated Title" {
+		t.Errorf("Expected title 'Updated Title', got %s", title)
+	}
+
+	// Verify lines were replaced
+	var lineCount int
+	db.QueryRow("SELECT COUNT(*) FROM rfq_lines WHERE rfq_id=?", "RFQ-001").Scan(&lineCount)
+	if lineCount != 1 {
+		t.Errorf("Expected 1 line after update, got %d", lineCount)
+	}
+
+	var lineIPN string
+	db.QueryRow("SELECT ipn FROM rfq_lines WHERE rfq_id=?", "RFQ-001").Scan(&lineIPN)
+	if lineIPN != "IPN-002" {
+		t.Errorf("Expected line IPN 'IPN-002', got %s", lineIPN)
+	}
+}
+
+// Test handleDeleteRFQ - Success
+func TestHandleDeleteRFQ_Success(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestRFQ(t, db, "RFQ-DELETE", "To Delete", "draft", "user1")
+	insertTestRFQLine(t, db, "RFQ-DELETE", "IPN-001", 10)
+
+	req := httptest.NewRequest("DELETE", "/api/rfq/RFQ-DELETE", nil)
+	w := httptest.NewRecorder()
+
+	handleDeleteRFQ(w, req, "RFQ-DELETE")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify RFQ was deleted
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM rfqs WHERE id=?", "RFQ-DELETE").Scan(&count)
+	if count != 0 {
+		t.Errorf("Expected RFQ to be deleted")
+	}
+
+	// Verify lines were cascade deleted
+	db.QueryRow("SELECT COUNT(*) FROM rfq_lines WHERE rfq_id=?", "RFQ-DELETE").Scan(&count)
+	if count != 0 {
+		t.Errorf("Expected RFQ lines to be cascade deleted")
+	}
+}
+
 // Test handleSendRFQ - Draft to Sent transition
 func TestHandleSendRFQ_Success(t *testing.T) {
 	oldDB := db
@@ -535,6 +621,27 @@ func TestHandleAwardRFQ_Success(t *testing.T) {
 	}
 }
 
+// Test handleAwardRFQ - Missing vendor
+func TestHandleAwardRFQ_MissingVendor(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestRFQ(t, db, "RFQ-001", "Test", "sent", "user1")
+
+	award := map[string]string{}
+	body, _ := json.Marshal(award)
+	req := httptest.NewRequest("POST", "/api/rfq/RFQ-001/award", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleAwardRFQ(w, req, "RFQ-001")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400 for missing vendor_id, got %d", w.Code)
+	}
+}
+
 // Test handleCloseRFQ - Success
 func TestHandleCloseRFQ_Success(t *testing.T) {
 	oldDB := db
@@ -557,6 +664,163 @@ func TestHandleCloseRFQ_Success(t *testing.T) {
 	db.QueryRow("SELECT status FROM rfqs WHERE id=?", "RFQ-CLOSE").Scan(&status)
 	if status != "closed" {
 		t.Errorf("Expected status 'closed', got %s", status)
+	}
+}
+
+// Test handleCloseRFQ - Invalid status
+func TestHandleCloseRFQ_InvalidStatus(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestRFQ(t, db, "RFQ-DRAFT", "Draft RFQ", "draft", "user1")
+
+	req := httptest.NewRequest("POST", "/api/rfq/RFQ-DRAFT/close", nil)
+	w := httptest.NewRecorder()
+
+	handleCloseRFQ(w, req, "RFQ-DRAFT")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400 for invalid status transition, got %d", w.Code)
+	}
+}
+
+// Test handleCreateRFQQuote - Success
+func TestHandleCreateRFQQuote_Success(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestRFQ(t, db, "RFQ-QUOTE", "Quote Test", "sent", "user1")
+	lineID := insertTestRFQLine(t, db, "RFQ-QUOTE", "IPN-001", 100)
+	vendorID := insertTestRFQVendor(t, db, "RFQ-QUOTE", "V-001", "pending")
+
+	quote := map[string]interface{}{
+		"rfq_vendor_id":  vendorID,
+		"rfq_line_id":    lineID,
+		"unit_price":     15.75,
+		"lead_time_days": 14,
+		"moq":            50,
+		"notes":          "Best price for qty 100+",
+	}
+
+	body, _ := json.Marshal(quote)
+	req := httptest.NewRequest("POST", "/api/rfq/RFQ-QUOTE/quotes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleCreateRFQQuote(w, req, "RFQ-QUOTE")
+
+	if w.Code != 201 {
+		t.Errorf("Expected status 201, got %d", w.Code)
+	}
+
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	created := resp.Data.(map[string]interface{})
+
+	if created["unit_price"] != 15.75 {
+		t.Errorf("Expected unit_price 15.75, got %v", created["unit_price"])
+	}
+
+	// Verify vendor status changed to quoted
+	var vendorStatus string
+	db.QueryRow("SELECT status FROM rfq_vendors WHERE id=?", vendorID).Scan(&vendorStatus)
+	if vendorStatus != "quoted" {
+		t.Errorf("Expected vendor status 'quoted', got %s", vendorStatus)
+	}
+}
+
+// Test handleUpdateRFQQuote - Success
+func TestHandleUpdateRFQQuote_Success(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestRFQ(t, db, "RFQ-UPDATE", "Update Test", "sent", "user1")
+	lineID := insertTestRFQLine(t, db, "RFQ-UPDATE", "IPN-001", 100)
+	vendorID := insertTestRFQVendor(t, db, "RFQ-UPDATE", "V-001", "pending")
+
+	res, _ := db.Exec("INSERT INTO rfq_quotes (rfq_id, rfq_vendor_id, rfq_line_id, unit_price, lead_time_days, moq) VALUES (?, ?, ?, ?, ?, ?)",
+		"RFQ-UPDATE", vendorID, lineID, 10.0, 10, 25)
+	quoteID, _ := res.LastInsertId()
+
+	update := map[string]interface{}{
+		"unit_price":     12.50,
+		"lead_time_days": 7,
+		"moq":            10,
+		"notes":          "Updated quote",
+	}
+
+	body, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/api/rfq/RFQ-UPDATE/quotes/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateRFQQuote(w, req, "RFQ-UPDATE", string(rune(quoteID)))
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify quote was updated
+	var unitPrice float64
+	db.QueryRow("SELECT unit_price FROM rfq_quotes WHERE id=?", quoteID).Scan(&unitPrice)
+	if unitPrice != 12.50 {
+		t.Errorf("Expected unit_price 12.50, got %.2f", unitPrice)
+	}
+}
+
+// Test handleCompareRFQ
+func TestHandleCompareRFQ(t *testing.T) {
+	oldDB := db
+	db = setupRFQTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	insertTestVendorRFQ(t, db, "V-001", "Vendor A")
+	insertTestVendorRFQ(t, db, "V-002", "Vendor B")
+	insertTestRFQ(t, db, "RFQ-COMPARE", "Compare Test", "sent", "user1")
+	
+	line1 := insertTestRFQLine(t, db, "RFQ-COMPARE", "IPN-001", 100)
+	line2 := insertTestRFQLine(t, db, "RFQ-COMPARE", "IPN-002", 50)
+	
+	vendor1 := insertTestRFQVendor(t, db, "RFQ-COMPARE", "V-001", "quoted")
+	vendor2 := insertTestRFQVendor(t, db, "RFQ-COMPARE", "V-002", "quoted")
+
+	// Add quotes
+	db.Exec("INSERT INTO rfq_quotes (rfq_id, rfq_vendor_id, rfq_line_id, unit_price, lead_time_days) VALUES (?, ?, ?, ?, ?)",
+		"RFQ-COMPARE", vendor1, line1, 10.0, 14)
+	db.Exec("INSERT INTO rfq_quotes (rfq_id, rfq_vendor_id, rfq_line_id, unit_price, lead_time_days) VALUES (?, ?, ?, ?, ?)",
+		"RFQ-COMPARE", vendor2, line1, 9.5, 21)
+	db.Exec("INSERT INTO rfq_quotes (rfq_id, rfq_vendor_id, rfq_line_id, unit_price, lead_time_days) VALUES (?, ?, ?, ?, ?)",
+		"RFQ-COMPARE", vendor1, line2, 15.0, 14)
+
+	req := httptest.NewRequest("GET", "/api/rfq/RFQ-COMPARE/compare", nil)
+	w := httptest.NewRecorder()
+
+	handleCompareRFQ(w, req, "RFQ-COMPARE")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	result := resp.Data.(map[string]interface{})
+
+	// Verify structure
+	lines := result["lines"].([]interface{})
+	vendors := result["vendors"].([]interface{})
+	matrix := result["matrix"].(map[string]interface{})
+
+	if len(lines) != 2 {
+		t.Errorf("Expected 2 lines, got %d", len(lines))
+	}
+	if len(vendors) != 2 {
+		t.Errorf("Expected 2 vendors, got %d", len(vendors))
+	}
+	if len(matrix) == 0 {
+		t.Errorf("Expected matrix to have entries")
 	}
 }
 

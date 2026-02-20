@@ -1,283 +1,217 @@
 package main
 
 import (
-	"bytes"
-	"database/sql"
 	"encoding/json"
-	"net/http"
+	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	_ "modernc.org/sqlite"
+	"time"
 )
 
-func setupCAPATestDB(t *testing.T) *sql.DB {
-	testDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open test DB: %v", err)
+func unmarshalResp[T any](body []byte) (T, error) {
+	var wrapper struct {
+		Data T `json:"data"`
 	}
-
-	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		t.Fatalf("Failed to enable foreign keys: %v", err)
-	}
-
-	// Create capas table
-	_, err = testDB.Exec(`
-		CREATE TABLE capas (
-			id TEXT PRIMARY KEY,
-			title TEXT NOT NULL,
-			type TEXT DEFAULT 'corrective' CHECK(type IN ('corrective','preventive')),
-			linked_ncr_id TEXT,
-			linked_rma_id TEXT,
-			root_cause TEXT,
-			action_plan TEXT,
-			owner TEXT,
-			due_date TEXT,
-			status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','pending_review','closed','cancelled')),
-			effectiveness_check TEXT,
-			approved_by_qe TEXT,
-			approved_by_qe_at DATETIME,
-			approved_by_mgr TEXT,
-			approved_by_mgr_at DATETIME,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create capas table: %v", err)
-	}
-
-	// Create audit_log table
-	_, err = testDB.Exec(`
-		CREATE TABLE audit_log (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER,
-			username TEXT DEFAULT 'system',
-			action TEXT NOT NULL,
-			module TEXT NOT NULL,
-			record_id TEXT NOT NULL,
-			summary TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create audit_log table: %v", err)
-	}
-
-	// Create part_changes table
-	_, err = testDB.Exec(`
-		CREATE TABLE part_changes (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user TEXT,
-			table_name TEXT,
-			record_id TEXT,
-			operation TEXT,
-			old_snapshot TEXT,
-			new_snapshot TEXT,
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create part_changes table: %v", err)
-	}
-
-	// Create users table for RBAC
-	_, err = testDB.Exec(`
-		CREATE TABLE users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT UNIQUE NOT NULL,
-			role TEXT DEFAULT 'user' CHECK(role IN ('user','qe','manager','admin')),
-			email TEXT,
-			password_hash TEXT
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create users table: %v", err)
-	}
-
-	// Create sessions table for auth
-	_, err = testDB.Exec(`
-		CREATE TABLE sessions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			token TEXT UNIQUE NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			expires_at DATETIME,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create sessions table: %v", err)
-	}
-
-	// Create email_subscriptions table for notifications
-	_, err = testDB.Exec(`
-		CREATE TABLE email_subscriptions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			email TEXT NOT NULL,
-			event_type TEXT NOT NULL
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create email_subscriptions table: %v", err)
-	}
-
-	return testDB
+	err := json.Unmarshal(body, &wrapper)
+	return wrapper.Data, err
 }
 
-func insertTestCAPARecord(t *testing.T, db *sql.DB, id, title, capaType, status, owner, dueDate string) {
-	_, err := db.Exec(
-		"INSERT INTO capas (id, title, type, status, owner, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-		id, title, capaType, status, owner, dueDate,
-	)
-	if err != nil {
-		t.Fatalf("Failed to insert test CAPA: %v", err)
-	}
-}
-
-func insertTestUserCAPA(t *testing.T, db *sql.DB, id int, username, role string) {
-	_, err := db.Exec(
-		"INSERT INTO users (id, username, role, password_hash) VALUES (?, ?, ?, 'hash')",
-		id, username, role,
-	)
-	if err != nil {
-		t.Fatalf("Failed to insert test user: %v", err)
-	}
-}
-
-func insertTestSessionCAPA(t *testing.T, db *sql.DB, userID int, token string) {
-	_, err := db.Exec(
-		"INSERT INTO sessions (user_id, token, created_at) VALUES (?, ?, datetime('now'))",
-		userID, token,
-	)
-	if err != nil {
-		t.Fatalf("Failed to insert test session: %v", err)
-	}
-}
-
-// Test List CAPAs - Empty
-func TestHandleListCAPAs_Empty(t *testing.T) {
-	oldDB := db
-	db = setupCAPATestDB(t)
+func TestCAPACRUD(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
 	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	req := httptest.NewRequest("GET", "/api/capas", nil)
+	// List (empty)
 	w := httptest.NewRecorder()
-
+	req := authedRequest("GET", "/api/v1/capas", nil, cookie)
 	handleListCAPAs(w, req)
-
 	if w.Code != 200 {
-		t.Errorf("Expected status 200, got %d", w.Code)
+		t.Fatalf("list: expected 200, got %d", w.Code)
+	}
+	list, _ := unmarshalResp[[]CAPA](w.Body.Bytes())
+	if len(list) != 0 {
+		t.Fatalf("expected 0, got %d", len(list))
 	}
 
-	var resp APIResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	capas, ok := resp.Data.([]interface{})
-	if !ok {
-		t.Fatalf("Expected data to be an array")
-	}
-
-	if len(capas) != 0 {
-		t.Errorf("Expected empty array, got %d CAPAs", len(capas))
-	}
-}
-
-// Test Create CAPA - Valid
-func TestHandleCreateCAPA_Valid(t *testing.T) {
-	oldDB := db
-	db = setupCAPATestDB(t)
-	defer func() { db.Close(); db = oldDB }()
-
-	capa := CAPA{
-		Title:      "Fix quality issue",
-		Type:       "corrective",
-		RootCause:  "Incorrect assembly procedure",
-		ActionPlan: "Update work instructions",
-		Owner:      "eng1",
-		DueDate:    "2026-03-31",
-	}
-
-	body, _ := json.Marshal(capa)
-	req := httptest.NewRequest("POST", "/api/capas", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-
+	// Create
+	body := `{"title":"Fix solder defect","type":"corrective","root_cause":"Insufficient flux","action_plan":"Update profile","owner":"engineer1","due_date":"2026-03-01","linked_ncr_id":"NCR-001"}`
+	w = httptest.NewRecorder()
+	req = authedRequest("POST", "/api/v1/capas", []byte(body), cookie)
 	handleCreateCAPA(w, req)
-
 	if w.Code != 200 {
-		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("create: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	created, _ := unmarshalResp[CAPA](w.Body.Bytes())
+	if created.ID == "" {
+		t.Fatalf("expected CAPA ID, response: %s", w.Body.String())
+	}
+	if created.Title != "Fix solder defect" {
+		t.Fatalf("expected 'Fix solder defect', got '%s'", created.Title)
+	}
+	if created.Status != "open" {
+		t.Fatalf("expected 'open', got '%s'", created.Status)
+	}
+	if created.Type != "corrective" {
+		t.Fatalf("expected 'corrective', got '%s'", created.Type)
+	}
+
+	// Get
+	w = httptest.NewRecorder()
+	req = authedRequest("GET", "/api/v1/capas/"+created.ID, nil, cookie)
+	handleGetCAPA(w, req, created.ID)
+	if w.Code != 200 {
+		t.Fatalf("get: expected 200, got %d", w.Code)
+	}
+	fetched, _ := unmarshalResp[CAPA](w.Body.Bytes())
+	if fetched.LinkedNCRID != "NCR-001" {
+		t.Fatalf("expected 'NCR-001', got '%s'", fetched.LinkedNCRID)
+	}
+
+	// Update
+	updateBody := `{"title":"Fix solder defect","type":"corrective","status":"in_progress","root_cause":"Insufficient flux","action_plan":"Update profile","owner":"engineer1","due_date":"2026-03-01"}`
+	w = httptest.NewRecorder()
+	req = authedRequest("PUT", "/api/v1/capas/"+created.ID, []byte(updateBody), cookie)
+	handleUpdateCAPA(w, req, created.ID)
+	if w.Code != 200 {
+		t.Fatalf("update: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	updated, _ := unmarshalResp[CAPA](w.Body.Bytes())
+	if updated.Status != "in_progress" {
+		t.Fatalf("expected 'in_progress', got '%s'", updated.Status)
+	}
+
+	// List (should have 1)
+	w = httptest.NewRecorder()
+	req = authedRequest("GET", "/api/v1/capas", nil, cookie)
+	handleListCAPAs(w, req)
+	list, _ = unmarshalResp[[]CAPA](w.Body.Bytes())
+	if len(list) != 1 {
+		t.Fatalf("expected 1, got %d", len(list))
 	}
 }
 
-// Test Update CAPA - QE Approval
-func TestHandleUpdateCAPA_QEApproval(t *testing.T) {
-	oldDB := db
-	db = setupCAPATestDB(t)
+func TestCAPACloseRequiresEffectivenessAndApproval(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
 	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	// Create QE user and session
-	insertTestUserCAPA(t, db, 1, "qeuser", "qe")
-	insertTestSessionCAPA(t, db, 1, "qe-token")
-
-	insertTestCAPARecord(t, db, "CAPA-001", "Test CAPA", "corrective", "open", "eng1", "2026-03-31")
-
-	updateData := map[string]interface{}{
-		"approved_by_qe": "1",
-	}
-
-	body, _ := json.Marshal(updateData)
-	req := httptest.NewRequest("PUT", "/api/capas/CAPA-001", bytes.NewReader(body))
-	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: "qe-token"})
+	// Create
 	w := httptest.NewRecorder()
+	req := authedRequest("POST", "/api/v1/capas", []byte(`{"title":"Test close","type":"corrective","owner":"eng"}`), cookie)
+	handleCreateCAPA(w, req)
+	c, _ := unmarshalResp[CAPA](w.Body.Bytes())
 
-	handleUpdateCAPA(w, req, "CAPA-001")
-
-	if w.Code != 200 {
-		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// Verify approval was recorded
-	var approvedByQE string
-	var approvedAt sql.NullString
-	db.QueryRow("SELECT approved_by_qe, approved_by_qe_at FROM capas WHERE id = ?", "CAPA-001").Scan(&approvedByQE, &approvedAt)
-	if approvedByQE != "1" {
-		t.Errorf("Expected approved_by_qe to be '1', got %s", approvedByQE)
-	}
-	if !approvedAt.Valid {
-		t.Error("Expected approved_by_qe_at to be set")
-	}
-}
-
-// Test Update CAPA - Cannot Close Without Approvals
-func TestHandleUpdateCAPA_CloseWithoutApprovals(t *testing.T) {
-	oldDB := db
-	db = setupCAPATestDB(t)
-	defer func() { db.Close(); db = oldDB }()
-
-	insertTestUserCAPA(t, db, 1, "testuser", "user")
-	insertTestSessionCAPA(t, db, 1, "test-token")
-
-	insertTestCAPARecord(t, db, "CAPA-001", "Test CAPA", "corrective", "in_progress", "eng1", "2026-03-31")
-	db.Exec("UPDATE capas SET effectiveness_check = ? WHERE id = ?", "Verified effective", "CAPA-001")
-
-	updateData := map[string]interface{}{
-		"status": "closed",
-	}
-
-	body, _ := json.Marshal(updateData)
-	req := httptest.NewRequest("PUT", "/api/capas/CAPA-001", bytes.NewReader(body))
-	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: "test-token"})
-	w := httptest.NewRecorder()
-
-	handleUpdateCAPA(w, req, "CAPA-001")
-
+	// Close without effectiveness
+	w = httptest.NewRecorder()
+	req = authedRequest("PUT", "/api/v1/capas/"+c.ID, []byte(`{"title":"Test close","type":"corrective","owner":"eng","status":"closed"}`), cookie)
+	handleUpdateCAPA(w, req, c.ID)
 	if w.Code != 400 {
-		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 400 (no effectiveness), got %d: %s", w.Code, w.Body.String())
 	}
 
-	if !bytes.Contains(w.Body.Bytes(), []byte("approval required")) {
-		t.Errorf("Expected error about missing approvals, got: %s", w.Body.String())
+	// Close with effectiveness but no approvals
+	w = httptest.NewRecorder()
+	req = authedRequest("PUT", "/api/v1/capas/"+c.ID, []byte(`{"title":"Test close","type":"corrective","owner":"eng","status":"closed","effectiveness_check":"Verified"}`), cookie)
+	handleUpdateCAPA(w, req, c.ID)
+	if w.Code != 400 {
+		t.Fatalf("expected 400 (no approvals), got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Close with all requirements
+	w = httptest.NewRecorder()
+	req = authedRequest("PUT", "/api/v1/capas/"+c.ID, []byte(`{"title":"Test close","type":"corrective","owner":"eng","status":"closed","effectiveness_check":"Verified OK","approved_by_qe":"QE Approved","approved_by_mgr":"Manager Approved"}`), cookie)
+	handleUpdateCAPA(w, req, c.ID)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	closed, _ := unmarshalResp[CAPA](w.Body.Bytes())
+	if closed.Status != "closed" {
+		t.Fatalf("expected 'closed', got '%s'", closed.Status)
+	}
+	if closed.ApprovedByQEAt == nil {
+		t.Fatal("expected approved_by_qe_at set")
+	}
+	if closed.ApprovedByMgrAt == nil {
+		t.Fatal("expected approved_by_mgr_at set")
+	}
+}
+
+func TestCAPADashboard(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	pastDate := time.Now().AddDate(0, 0, -5).Format("2006-01-02")
+	futureDate := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+
+	for i, dd := range []string{pastDate, pastDate, futureDate} {
+		w := httptest.NewRecorder()
+		body := fmt.Sprintf(`{"title":"CAPA %d","type":"corrective","owner":"eng1","due_date":"%s"}`, i, dd)
+		req := httptest.NewRequest("POST", "/api/v1/capas", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		handleCreateCAPA(w, req)
+		if w.Code != 200 {
+			t.Fatalf("create %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/capas/dashboard", nil)
+	handleCAPADashboard(w, req)
+	if w.Code != 200 {
+		t.Fatalf("dashboard: expected 200, got %d", w.Code)
+	}
+	dash, _ := unmarshalResp[map[string]interface{}](w.Body.Bytes())
+	if int(dash["total_open"].(float64)) != 3 {
+		t.Fatalf("expected 3 open, got %v", dash["total_open"])
+	}
+	if int(dash["total_overdue"].(float64)) != 2 {
+		t.Fatalf("expected 2 overdue, got %v", dash["total_overdue"])
+	}
+}
+
+func TestCAPAGetNotFound(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/capas/CAPA-999", nil)
+	handleGetCAPA(w, req, "CAPA-999")
+	if w.Code != 404 {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestCAPAPreventiveType(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/capas", strings.NewReader(`{"title":"Prevent recurrence","type":"preventive","linked_rma_id":"RMA-001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handleCreateCAPA(w, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	c, _ := unmarshalResp[CAPA](w.Body.Bytes())
+	if c.Type != "preventive" {
+		t.Fatalf("expected 'preventive', got '%s'", c.Type)
+	}
+	if c.LinkedRMAID != "RMA-001" {
+		t.Fatalf("expected 'RMA-001', got '%s'", c.LinkedRMAID)
+	}
+}
+
+func TestCAPADefaultType(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/capas", strings.NewReader(`{"title":"Default type test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handleCreateCAPA(w, req)
+	c, _ := unmarshalResp[CAPA](w.Body.Bytes())
+	if c.Type != "corrective" {
+		t.Fatalf("expected default 'corrective', got '%s'", c.Type)
 	}
 }

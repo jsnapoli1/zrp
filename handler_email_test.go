@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"net/smtp"
 	"strings"
@@ -463,7 +464,7 @@ func TestHandleTestEmail_SendFailure(t *testing.T) {
 	// Mock SMTP to return error
 	oldSMTPSendFunc := SMTPSendFunc
 	SMTPSendFunc = func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
-		return smtp.ServerNotAvailable("test error")
+		return errors.New("test error")
 	}
 	defer func() { SMTPSendFunc = oldSMTPSendFunc }()
 
@@ -604,7 +605,7 @@ func TestSendEmail_LogsFailure(t *testing.T) {
 	// Mock SMTP to fail
 	oldSMTPSendFunc := SMTPSendFunc
 	SMTPSendFunc = func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
-		return smtp.ServerNotAvailable("test error")
+		return errors.New("test error")
 	}
 	defer func() { SMTPSendFunc = oldSMTPSendFunc }()
 

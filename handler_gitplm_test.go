@@ -1,202 +1,140 @@
 package main
 
 import (
-	"bytes"
-	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
-
-	_ "modernc.org/sqlite"
 )
 
-func setupGitPLMTestDB(t *testing.T) *sql.DB {
-	testDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open test DB: %v", err)
-	}
+func TestGetGitPLMConfigDefault(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		t.Fatalf("Failed to enable foreign keys: %v", err)
-	}
-
-	// Create app_settings table
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS app_settings (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL DEFAULT ''
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create app_settings table: %v", err)
-	}
-
-	return testDB
-}
-
-func TestHandleGetGitPLMConfig_NoConfig(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupGitPLMTestDB(t)
-	defer db.Close()
-
-	req := httptest.NewRequest("GET", "/api/settings/gitplm", nil)
+	req := authedRequest("GET", "/api/v1/settings/gitplm", nil, loginAdmin(t, db))
 	w := httptest.NewRecorder()
-
 	handleGetGitPLMConfig(w, req)
-
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-
-	var response GitPLMConfig
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.BaseURL != "" {
-		t.Errorf("Expected empty BaseURL, got %q", response.BaseURL)
+	var resp struct {
+		Data GitPLMConfig `json:"data"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.BaseURL != "" {
+		t.Errorf("expected empty base_url, got %q", resp.Data.BaseURL)
 	}
 }
 
-func TestHandleGetGitPLMConfig_WithConfig(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestUpdateAndGetGitPLMConfig(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	db = setupGitPLMTestDB(t)
-	defer db.Close()
-
-	_, err := db.Exec("INSERT INTO app_settings (key, value) VALUES ('gitplm_base_url', 'https://gitplm.example.com')")
-	if err != nil {
-		t.Fatalf("Failed to insert test data: %v", err)
+	// Update
+	req := authedRequest("PUT", "/api/v1/settings/gitplm", []byte(`{"base_url":"https://gitplm.example.com/"}`), cookie)
+	w := httptest.NewRecorder()
+	handleUpdateGitPLMConfig(w, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	req := httptest.NewRequest("GET", "/api/settings/gitplm", nil)
-	w := httptest.NewRecorder()
+	// Verify trailing slash trimmed
+	var putResp struct {
+		Data GitPLMConfig `json:"data"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &putResp)
+	if putResp.Data.BaseURL != "https://gitplm.example.com" {
+		t.Errorf("expected trimmed URL, got %q", putResp.Data.BaseURL)
+	}
 
+	// Get
+	req = authedRequest("GET", "/api/v1/settings/gitplm", nil, cookie)
+	w = httptest.NewRecorder()
 	handleGetGitPLMConfig(w, req)
-
-	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+	var getResp struct {
+		Data GitPLMConfig `json:"data"`
 	}
-
-	var response GitPLMConfig
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.BaseURL != "https://gitplm.example.com" {
-		t.Errorf("Expected URL 'https://gitplm.example.com', got %q", response.BaseURL)
+	json.Unmarshal(w.Body.Bytes(), &getResp)
+	if getResp.Data.BaseURL != "https://gitplm.example.com" {
+		t.Errorf("expected 'https://gitplm.example.com', got %q", getResp.Data.BaseURL)
 	}
 }
 
-func TestHandleUpdateGitPLMConfig_Create(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestUpdateGitPLMConfigOverwrite(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	db = setupGitPLMTestDB(t)
-	defer db.Close()
-
-	config := GitPLMConfig{BaseURL: "https://gitplm.example.com"}
-	body, _ := json.Marshal(config)
-
-	req := httptest.NewRequest("PUT", "/api/settings/gitplm", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	// Set first value
+	req := authedRequest("PUT", "/api/v1/settings/gitplm", []byte(`{"base_url":"https://old.example.com"}`), cookie)
 	w := httptest.NewRecorder()
-
 	handleUpdateGitPLMConfig(w, req)
 
-	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var response GitPLMConfig
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.BaseURL != "https://gitplm.example.com" {
-		t.Errorf("Expected URL 'https://gitplm.example.com', got %q", response.BaseURL)
-	}
-}
-
-func TestHandleUpdateGitPLMConfig_TrimSlash(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupGitPLMTestDB(t)
-	defer db.Close()
-
-	config := GitPLMConfig{BaseURL: "https://gitplm.example.com/"}
-	body, _ := json.Marshal(config)
-
-	req := httptest.NewRequest("PUT", "/api/settings/gitplm", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
+	// Overwrite
+	req = authedRequest("PUT", "/api/v1/settings/gitplm", []byte(`{"base_url":"https://new.example.com"}`), cookie)
+	w = httptest.NewRecorder()
 	handleUpdateGitPLMConfig(w, req)
 
-	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+	// Verify
+	req = authedRequest("GET", "/api/v1/settings/gitplm", nil, cookie)
+	w = httptest.NewRecorder()
+	handleGetGitPLMConfig(w, req)
+	var resp struct {
+		Data GitPLMConfig `json:"data"`
 	}
-
-	var response GitPLMConfig
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.BaseURL != "https://gitplm.example.com" {
-		t.Errorf("Expected trailing slash trimmed, got %q", response.BaseURL)
-	}
-}
-
-func TestHandleGetGitPLMURL_NotConfigured(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupGitPLMTestDB(t)
-	defer db.Close()
-
-	req := httptest.NewRequest("GET", "/api/parts/RES-0001/gitplm-url", nil)
-	w := httptest.NewRecorder()
-
-	handleGetGitPLMURL(w, req, "RES-0001")
-
-	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
-	}
-
-	var response GitPLMURLResponse
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.Configured {
-		t.Error("Expected Configured=false when no config")
-	}
-	if response.URL != "" {
-		t.Errorf("Expected empty URL, got %q", response.URL)
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.BaseURL != "https://new.example.com" {
+		t.Errorf("expected overwritten URL, got %q", resp.Data.BaseURL)
 	}
 }
 
-func TestHandleGetGitPLMURL_Configured(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestGetGitPLMURLNotConfigured(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	db = setupGitPLMTestDB(t)
-	defer db.Close()
-
-	db.Exec("INSERT INTO app_settings (key, value) VALUES ('gitplm_base_url', 'https://gitplm.example.com')")
-
-	req := httptest.NewRequest("GET", "/api/parts/RES-0001/gitplm-url", nil)
+	req := authedRequest("GET", "/api/v1/parts/IPN-001/gitplm-url", nil, loginAdmin(t, db))
 	w := httptest.NewRecorder()
-
-	handleGetGitPLMURL(w, req, "RES-0001")
-
+	handleGetGitPLMURL(w, req, "IPN-001")
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-
-	var response GitPLMURLResponse
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if !response.Configured {
-		t.Error("Expected Configured=true")
+	var resp struct {
+		Data GitPLMURLResponse `json:"data"`
 	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.Configured {
+		t.Error("expected configured=false")
+	}
+	if resp.Data.URL != "" {
+		t.Errorf("expected empty URL, got %q", resp.Data.URL)
+	}
+}
 
-	expectedURL := "https://gitplm.example.com/parts/RES-0001"
-	if response.URL != expectedURL {
-		t.Errorf("Expected URL %q, got %q", expectedURL, response.URL)
+func TestGetGitPLMURLConfigured(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
+
+	// Configure
+	req := authedRequest("PUT", "/api/v1/settings/gitplm", []byte(`{"base_url":"https://plm.acme.com"}`), cookie)
+	w := httptest.NewRecorder()
+	handleUpdateGitPLMConfig(w, req)
+
+	// Get URL
+	req = authedRequest("GET", "/api/v1/parts/IPN-001/gitplm-url", nil, cookie)
+	w = httptest.NewRecorder()
+	handleGetGitPLMURL(w, req, "IPN-001")
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data GitPLMURLResponse `json:"data"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp.Data.Configured {
+		t.Error("expected configured=true")
+	}
+	if resp.Data.URL != "https://plm.acme.com/parts/IPN-001" {
+		t.Errorf("expected 'https://plm.acme.com/parts/IPN-001', got %q", resp.Data.URL)
 	}
 }
