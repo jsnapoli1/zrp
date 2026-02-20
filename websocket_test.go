@@ -13,7 +13,7 @@ import (
 )
 
 func TestWSHub_RegisterUnregister(t *testing.T) {
-	hub := &Hub{
+	_ = &Hub{
 		clients: make(map[*websocket.Conn]struct{}),
 	}
 

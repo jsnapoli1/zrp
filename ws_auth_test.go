@@ -15,8 +15,8 @@ import (
 // --- WebSocket Endpoint Tests ---
 
 func TestWebSocketUpgrade(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	// Start test server with just the ws handler
 	srv := httptest.NewServer(http.HandlerFunc(handleWebSocket))
@@ -39,8 +39,8 @@ func TestWebSocketUpgrade(t *testing.T) {
 }
 
 func TestWebSocketBroadcastFormat(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	srv := httptest.NewServer(http.HandlerFunc(handleWebSocket))
 	defer srv.Close()
@@ -77,8 +77,8 @@ func TestWebSocketBroadcastFormat(t *testing.T) {
 }
 
 func TestWebSocketAuthRequiredViaMiddleware(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	// Create server with auth middleware wrapping ws handler
 	mux := http.NewServeMux()
@@ -101,8 +101,8 @@ func TestWebSocketAuthRequiredViaMiddleware(t *testing.T) {
 // --- WebSocket Hub Tests ---
 
 func TestHubClientRegistration(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	srv := httptest.NewServer(http.HandlerFunc(handleWebSocket))
 	defer srv.Close()
@@ -132,8 +132,8 @@ func TestHubClientRegistration(t *testing.T) {
 }
 
 func TestHubBroadcastToMultipleClients(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	srv := httptest.NewServer(http.HandlerFunc(handleWebSocket))
 	defer srv.Close()
@@ -164,8 +164,8 @@ func TestHubBroadcastToMultipleClients(t *testing.T) {
 }
 
 func TestHubDisconnectCleanup(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	srv := httptest.NewServer(http.HandlerFunc(handleWebSocket))
 	defer srv.Close()
@@ -195,8 +195,8 @@ func TestHubDisconnectCleanup(t *testing.T) {
 // --- Auth: bcrypt password verification ---
 
 func TestBcryptPasswordVerification(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	resetLoginRateLimit()
 
@@ -224,16 +224,16 @@ func TestBcryptPasswordVerification(t *testing.T) {
 // --- Auth: session expiry ---
 
 func TestSessionExpiry(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	cookie := loginAdmin(t)
+	cookie := loginAdmin(t, db)
 
 	// Manually expire the session
-	db.Exec("UPDATE sessions SET expires_at = '2000-01-01 00:00:00' WHERE token = ?", cookie.Value)
+	db.Exec("UPDATE sessions SET expires_at = '2000-01-01 00:00:00' WHERE token = ?", cookie)
 
 	req := httptest.NewRequest("GET", "/auth/me", nil)
-	req.AddCookie(cookie)
+	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w := httptest.NewRecorder()
 	handleMe(w, req)
 	if w.Code != 401 {
@@ -244,15 +244,15 @@ func TestSessionExpiry(t *testing.T) {
 // --- Auth: sliding window ---
 
 func TestSessionSlidingWindow(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	cookie := loginAdmin(t)
+	cookie := loginAdmin(t, db)
 
 	// Set the session expiry to something clearly in the past-ish (but still valid)
 	// so that when the middleware extends it, the new value is clearly different
 	shortExpiry := time.Now().Add(1 * time.Hour).Format("2006-01-02 15:04:05")
-	db.Exec("UPDATE sessions SET expires_at = ? WHERE token = ?", shortExpiry, cookie.Value)
+	db.Exec("UPDATE sessions SET expires_at = ? WHERE token = ?", shortExpiry, cookie)
 
 	// Make an authenticated request through the middleware
 	mux := http.NewServeMux()
@@ -262,13 +262,13 @@ func TestSessionSlidingWindow(t *testing.T) {
 	handler := requireAuth(mux)
 
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
-	req.AddCookie(cookie)
+	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
 	// Check that expiry was extended to ~24h from now (much later than the 1h we set)
 	var newExpiry string
-	db.QueryRow("SELECT expires_at FROM sessions WHERE token = ?", cookie.Value).Scan(&newExpiry)
+	db.QueryRow("SELECT expires_at FROM sessions WHERE token = ?", cookie).Scan(&newExpiry)
 
 	if newExpiry <= shortExpiry {
 		t.Errorf("session expiry should have been extended: orig=%s new=%s", shortExpiry, newExpiry)
@@ -278,14 +278,14 @@ func TestSessionSlidingWindow(t *testing.T) {
 // --- Auth: logout invalidates session ---
 
 func TestLogoutInvalidatesSession(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	cookie := loginAdmin(t)
+	cookie := loginAdmin(t, db)
 
 	// Verify session works
 	req := httptest.NewRequest("GET", "/auth/me", nil)
-	req.AddCookie(cookie)
+	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w := httptest.NewRecorder()
 	handleMe(w, req)
 	if w.Code != 200 {
@@ -294,7 +294,7 @@ func TestLogoutInvalidatesSession(t *testing.T) {
 
 	// Logout
 	req2 := httptest.NewRequest("POST", "/auth/logout", nil)
-	req2.AddCookie(cookie)
+	req2.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w2 := httptest.NewRecorder()
 	handleLogout(w2, req2)
 	if w2.Code != 200 {
@@ -303,7 +303,7 @@ func TestLogoutInvalidatesSession(t *testing.T) {
 
 	// Session should now be invalid
 	req3 := httptest.NewRequest("GET", "/auth/me", nil)
-	req3.AddCookie(cookie)
+	req3.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w3 := httptest.NewRecorder()
 	handleMe(w3, req3)
 	if w3.Code != 401 {
@@ -312,7 +312,7 @@ func TestLogoutInvalidatesSession(t *testing.T) {
 
 	// Verify session deleted from DB
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM sessions WHERE token = ?", cookie.Value).Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM sessions WHERE token = ?", cookie).Scan(&count)
 	if count != 0 {
 		t.Errorf("session should be deleted from DB, found %d", count)
 	}
@@ -321,12 +321,12 @@ func TestLogoutInvalidatesSession(t *testing.T) {
 // --- Auth: change password ---
 
 func TestChangePasswordRequiresCurrentPassword(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	cookie := loginAdmin(t)
+	cookie := loginAdmin(t, db)
 	var userID int
-	db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", cookie.Value).Scan(&userID)
+	db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", cookie).Scan(&userID)
 
 	// Wrong current password
 	body := `{"current_password":"WrongPassword123!","new_password":"NewPassword123!"}`
@@ -341,12 +341,12 @@ func TestChangePasswordRequiresCurrentPassword(t *testing.T) {
 }
 
 func TestChangePasswordMinLength(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	cookie := loginAdmin(t)
+	cookie := loginAdmin(t, db)
 	var userID int
-	db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", cookie.Value).Scan(&userID)
+	db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", cookie).Scan(&userID)
 
 	// Too short new password
 	body := `{"current_password":"changeme","new_password":"short"}`
@@ -361,12 +361,12 @@ func TestChangePasswordMinLength(t *testing.T) {
 }
 
 func TestChangePasswordSuccess(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	cookie := loginAdmin(t)
+	cookie := loginAdmin(t, db)
 	var userID int
-	db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", cookie.Value).Scan(&userID)
+	db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", cookie).Scan(&userID)
 
 	body := `{"current_password":"changeme","new_password":"NewPassword123!"}`
 	req := httptest.NewRequest("POST", "/auth/change-password", strings.NewReader(body))
@@ -403,8 +403,8 @@ func TestChangePasswordSuccess(t *testing.T) {
 // --- Auth: rate limiting ---
 
 func TestLoginRateLimiting(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	resetLoginRateLimit()
 
@@ -444,8 +444,8 @@ func TestLoginRateLimiting(t *testing.T) {
 // --- broadcast helper test ---
 
 func TestBroadcastHelper(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	srv := httptest.NewServer(http.HandlerFunc(handleWebSocket))
 	defer srv.Close()

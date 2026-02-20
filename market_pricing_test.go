@@ -86,8 +86,8 @@ func TestParseMouserLeadTime(t *testing.T) {
 }
 
 func TestMarketPricingCache(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	r := MarketPricingResult{
 		PartIPN:      "IPN-001",
@@ -119,8 +119,8 @@ func TestMarketPricingCache(t *testing.T) {
 }
 
 func TestMarketPricingCacheExpiry(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	r := MarketPricingResult{
 		PartIPN:     "IPN-001",
@@ -138,13 +138,13 @@ func TestMarketPricingCacheExpiry(t *testing.T) {
 }
 
 func TestDistributorSettingsHandlers(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
-	cookie := loginAdmin(t)
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
 	// Update Digikey settings
 	req := authedRequest("POST", "/api/v1/settings/digikey",
-		`{"client_id":"cid-456","client_secret":"secret-789"}`, cookie)
+		[]byte(`{"client_id":"cid-456","client_secret":"secret-789"}`), cookie)
 	w := httptest.NewRecorder()
 	handleUpdateDigikeySettings(w, req)
 	if w.Code != 200 {
@@ -158,7 +158,7 @@ func TestDistributorSettingsHandlers(t *testing.T) {
 	}
 
 	// Update Mouser settings
-	req = authedRequest("POST", "/api/v1/settings/mouser", `{"api_key":"mou-789"}`, cookie)
+	req = authedRequest("POST", "/api/v1/settings/mouser", []byte(`{"api_key":"mou-789"}`), cookie)
 	w = httptest.NewRecorder()
 	handleUpdateMouserSettings(w, req)
 	if w.Code != 200 {
@@ -169,7 +169,7 @@ func TestDistributorSettingsHandlers(t *testing.T) {
 	}
 
 	// Get distributor settings (should be masked)
-	req = authedRequest("GET", "/api/v1/settings/distributors", "", cookie)
+	req = authedRequest("GET", "/api/v1/settings/distributors", nil, cookie)
 	w = httptest.NewRecorder()
 	handleGetDistributorSettings(w, req)
 	var resp map[string]map[string]string
@@ -180,8 +180,8 @@ func TestDistributorSettingsHandlers(t *testing.T) {
 }
 
 func TestGetDistributorClientsUnconfigured(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	clients, unconfigured := getDistributorClients()
 	if len(clients) != 0 {
@@ -193,8 +193,8 @@ func TestGetDistributorClientsUnconfigured(t *testing.T) {
 }
 
 func TestGetDistributorClientsPartialConfig(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	setAppSetting("mouser_api_key", "test-key")
 	clients, unconfigured := getDistributorClients()
@@ -226,10 +226,10 @@ func TestMaskSetting(t *testing.T) {
 }
 
 func TestMarketPricingHandlerNoMPN(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	req := authedRequest("GET", "/api/v1/parts/IPN-001/market-pricing", "", loginAdmin(t))
+	req := authedRequest("GET", "/api/v1/parts/IPN-001/market-pricing", nil, loginAdmin(t, db))
 	w := httptest.NewRecorder()
 	handleGetMarketPricing(w, req, "IPN-001")
 	if w.Code != 200 {

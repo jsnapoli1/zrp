@@ -66,8 +66,8 @@ func insertReceivingInspection(t *testing.T, poID, ipn string, qtyReceived float
 }
 
 func TestListReceivingAll(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	insertReceivingInspection(t, "PO-001", "IPN-001", 100)
 	insertReceivingInspection(t, "PO-002", "IPN-002", 50)
@@ -87,8 +87,8 @@ func TestListReceivingAll(t *testing.T) {
 }
 
 func TestListReceivingPending(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	id1 := insertReceivingInspection(t, "PO-001", "IPN-001", 100)
 	insertReceivingInspection(t, "PO-002", "IPN-002", 50)
@@ -107,8 +107,8 @@ func TestListReceivingPending(t *testing.T) {
 }
 
 func TestListReceivingInspected(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	id1 := insertReceivingInspection(t, "PO-001", "IPN-001", 100)
 	insertReceivingInspection(t, "PO-002", "IPN-002", 50)
@@ -127,8 +127,8 @@ func TestListReceivingInspected(t *testing.T) {
 }
 
 func TestInspectPass(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	id := insertReceivingInspection(t, "PO-001", "IPN-001", 100)
 	idStr := fmt.Sprintf("%d", id)
@@ -174,8 +174,8 @@ func TestInspectPass(t *testing.T) {
 }
 
 func TestInspectFail(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	id := insertReceivingInspection(t, "PO-001", "IPN-002", 50)
 	idStr := fmt.Sprintf("%d", id)
@@ -206,8 +206,8 @@ func TestInspectFail(t *testing.T) {
 }
 
 func TestInspectHold(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	id := insertReceivingInspection(t, "PO-001", "IPN-003", 200)
 	idStr := fmt.Sprintf("%d", id)
@@ -240,8 +240,8 @@ func TestInspectHold(t *testing.T) {
 }
 
 func TestInspectExceedsReceived(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	id := insertReceivingInspection(t, "PO-001", "IPN-001", 50)
 	idStr := fmt.Sprintf("%d", id)
@@ -258,8 +258,8 @@ func TestInspectExceedsReceived(t *testing.T) {
 }
 
 func TestInspectNotFound(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	body := `{"qty_passed":10,"qty_failed":0,"qty_on_hold":0}`
 	req := httptest.NewRequest("POST", "/api/v1/receiving/9999/inspect", strings.NewReader(body))
@@ -273,8 +273,8 @@ func TestInspectNotFound(t *testing.T) {
 }
 
 func TestInspectInvalidID(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	w := httptest.NewRecorder()
 	handleInspectReceiving(w, httptest.NewRequest("POST", "/api/v1/receiving/abc/inspect", strings.NewReader(`{}`)), "abc")
@@ -307,8 +307,8 @@ func createTestECO(t *testing.T) string {
 }
 
 func TestECOCreateHasInitialRevision(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	ecoID := createTestECO(t)
 
@@ -334,8 +334,8 @@ func TestECOCreateHasInitialRevision(t *testing.T) {
 }
 
 func TestCreateECORevision(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	ecoID := createTestECO(t)
 
@@ -360,8 +360,8 @@ func TestCreateECORevision(t *testing.T) {
 }
 
 func TestGetSpecificRevision(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	ecoID := createTestECO(t)
 
@@ -381,8 +381,8 @@ func TestGetSpecificRevision(t *testing.T) {
 }
 
 func TestGetRevisionNotFound(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	ecoID := createTestECO(t)
 
@@ -395,8 +395,8 @@ func TestGetRevisionNotFound(t *testing.T) {
 }
 
 func TestRevisionAutoIncrements(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	ecoID := createTestECO(t)
 
@@ -424,8 +424,8 @@ func TestRevisionAutoIncrements(t *testing.T) {
 }
 
 func TestApproveECOUpdatesRevision(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 	partsDir = t.TempDir()
 
 	ecoID := createTestECO(t)
@@ -454,8 +454,8 @@ func TestApproveECOUpdatesRevision(t *testing.T) {
 }
 
 func TestImplementECOUpdatesRevision(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 	partsDir = t.TempDir()
 
 	ecoID := createTestECO(t)
@@ -491,8 +491,8 @@ func TestImplementECOUpdatesRevision(t *testing.T) {
 // --- BOM Where-Used Tests ---
 
 func TestWhereUsedEmpty(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 	partsDir = t.TempDir()
 
 	req := httptest.NewRequest("GET", "/api/v1/parts/IPN-999/where-used", nil)
@@ -511,8 +511,8 @@ func TestWhereUsedEmpty(t *testing.T) {
 }
 
 func TestWhereUsedFindsParentAssembly(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	tmpDir := t.TempDir()
 	partsDir = tmpDir
@@ -540,8 +540,8 @@ func TestWhereUsedFindsParentAssembly(t *testing.T) {
 }
 
 func TestWhereUsedMultipleAssemblies(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	tmpDir := t.TempDir()
 	partsDir = tmpDir
