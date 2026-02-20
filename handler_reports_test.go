@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -1679,15 +1680,20 @@ func TestReports_SQLInjection_Prevention(t *testing.T) {
 	// The reports don't take user input params beyond ?days and ?format
 	// But test that malicious values don't break anything
 
-	maliciousParams := []string{
-		"?days=30'; DROP TABLE ncrs; --",
-		"?format=csv'; DELETE FROM inventory; --",
-		"?days=30 OR 1=1",
+	maliciousTests := []struct {
+		name  string
+		param string
+		value string
+	}{
+		{"days_sql_injection", "days", "30'; DROP TABLE ncrs; --"},
+		{"format_sql_injection", "format", "csv'; DELETE FROM inventory; --"},
+		{"days_or_injection", "days", "30 OR 1=1"},
 	}
 
-	for _, param := range maliciousParams {
-		t.Run(param, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/reports/wo-throughput"+param, nil)
+	for _, tt := range maliciousTests {
+		t.Run(tt.name, func(t *testing.T) {
+			urlStr := "/api/reports/wo-throughput?" + url.QueryEscape(tt.param) + "=" + url.QueryEscape(tt.value)
+			req := httptest.NewRequest("GET", urlStr, nil)
 			w := httptest.NewRecorder()
 
 			handleReportWOThroughput(w, req)
