@@ -86,8 +86,8 @@ func BuildSearchSQL(filters []SearchFilter, entityType string, searchText string
 		}
 		
 		if clause != "" {
-			if i > 0 && filter.AndOr != "" {
-				// Use the AndOr from previous filter
+			if i > 0 {
+				// Use the AndOr from previous filter, default to AND
 				connector := " AND "
 				if strings.ToUpper(filters[i-1].AndOr) == "OR" {
 					connector = " OR "
@@ -166,10 +166,16 @@ func buildTextSearchFilters(entityType string, searchText string) []string {
 	return fields
 }
 
+// quoteField quotes a field name to handle SQL reserved words
+func quoteField(field string) string {
+	// Use double quotes for SQL standard identifier quoting
+	return `"` + field + `"`
+}
+
 // buildFilterClause constructs a single filter clause
 func buildFilterClause(filter SearchFilter, argIndex *int) (string, []interface{}, error) {
 	var args []interface{}
-	field := filter.Field
+	field := quoteField(filter.Field)
 	operator := strings.ToLower(filter.Operator)
 
 	// Handle wildcard in value for contains/startswith/endswith

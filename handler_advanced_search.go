@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -155,9 +156,9 @@ func searchWorkOrders(query SearchQuery) (*SearchResult, error) {
 	}
 
 	// Get data
-	dataSQL := `SELECT id, assembly_ipn, qty, status, priority, notes, 
-		created_at, started_at, completed_at, due_date, qty_good, qty_scrap
-		FROM work_orders` + whereClause + orderBy + 
+	dataSQL := `SELECT id, assembly_ipn, qty, status, "priority", notes, ` +
+		`created_at, started_at, completed_at, due_date, qty_good, qty_scrap ` +
+		`FROM work_orders` + whereClause + orderBy + 
 		fmt.Sprintf(" LIMIT %d OFFSET %d", query.Limit, query.Offset)
 	
 	rows, err := db.Query(dataSQL, args...)
@@ -168,9 +169,11 @@ func searchWorkOrders(query SearchQuery) (*SearchResult, error) {
 
 	var wos []map[string]interface{}
 	for rows.Next() {
-		var id, assemblyIPN, status, priority, notes, dueDate string
+		var id, assemblyIPN, status, priority string
+		var notes, dueDate sql.NullString
 		var qty, qtyGood, qtyScrap int
-		var createdAt, startedAt, completedAt *time.Time
+		var createdAt sql.NullTime
+		var startedAt, completedAt sql.NullTime
 		
 		if err := rows.Scan(&id, &assemblyIPN, &qty, &status, &priority, &notes,
 			&createdAt, &startedAt, &completedAt, &dueDate, &qtyGood, &qtyScrap); err != nil {
@@ -183,11 +186,11 @@ func searchWorkOrders(query SearchQuery) (*SearchResult, error) {
 			"qty":          qty,
 			"status":       status,
 			"priority":     priority,
-			"notes":        notes,
-			"created_at":   createdAt,
-			"started_at":   startedAt,
-			"completed_at": completedAt,
-			"due_date":     dueDate,
+			"notes":        notes.String,
+			"created_at":   createdAt.Time,
+			"started_at":   startedAt.Time,
+			"completed_at": completedAt.Time,
+			"due_date":     dueDate.String,
 			"qty_good":     qtyGood,
 			"qty_scrap":    qtyScrap,
 		}

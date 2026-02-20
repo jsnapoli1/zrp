@@ -191,24 +191,24 @@ func setupAdvancedSearchTestDB(t *testing.T) *sql.DB {
 }
 
 func insertAdvancedSearchTestData(t *testing.T, db *sql.DB) {
-	// Insert work orders
-	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, created_at) 
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		"WO-001", "ASSY-100", 10, "pending", "high", time.Now())
+	// Insert work orders (include all fields to avoid NULLs)
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, notes, created_at, due_date, qty_good, qty_scrap) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"WO-001", "ASSY-100", 10, "pending", "high", "", time.Now(), "", 0, 0)
 	if err != nil {
 		t.Fatalf("Failed to insert test WO: %v", err)
 	}
 
-	_, err = db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, created_at) 
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		"WO-002", "ASSY-200", 20, "in_progress", "normal", time.Now().Add(-24*time.Hour))
+	_, err = db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, notes, created_at, due_date, qty_good, qty_scrap) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"WO-002", "ASSY-200", 20, "in_progress", "normal", "", time.Now().Add(-24*time.Hour), "", 0, 0)
 	if err != nil {
 		t.Fatalf("Failed to insert test WO: %v", err)
 	}
 
-	_, err = db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, created_at) 
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		"WO-003", "ASSY-300", 5, "completed", "low", time.Now().Add(-48*time.Hour))
+	_, err = db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, notes, created_at, due_date, qty_good, qty_scrap) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"WO-003", "ASSY-300", 5, "completed", "low", "", time.Now().Add(-48*time.Hour), "", 0, 0)
 	if err != nil {
 		t.Fatalf("Failed to insert test WO: %v", err)
 	}
@@ -270,9 +270,11 @@ func insertAdvancedSearchTestData(t *testing.T, db *sql.DB) {
 
 func TestHandleAdvancedSearch_InvalidJSON(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	req := httptest.NewRequest("POST", "/api/advanced-search", bytes.NewBufferString("invalid json"))
 	w := httptest.NewRecorder()
@@ -286,11 +288,23 @@ func TestHandleAdvancedSearch_InvalidJSON(t *testing.T) {
 
 func TestHandleAdvancedSearch_WorkOrders(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() {
+		time.Sleep(200 * time.Millisecond) // Let goroutines complete
+		db.Close()
+		db = origDB 
+	}()
 
 	insertAdvancedSearchTestData(t, db)
+
+	// Verify data was inserted
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM work_orders").Scan(&count); err != nil {
+		t.Fatalf("Failed to verify test data: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("Expected 3 work orders in test DB, got %d", count)
+	}
 
 	tests := []struct {
 		name           string
@@ -360,9 +374,16 @@ func TestHandleAdvancedSearch_WorkOrders(t *testing.T) {
 				t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 			}
 
-			var result SearchResult
-			if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+			var apiResp APIResponse
+			if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			// Extract SearchResult from APIResponse.Data
+			resultBytes, _ := json.Marshal(apiResp.Data)
+			var result SearchResult
+			if err := json.Unmarshal(resultBytes, &result); err != nil {
+				t.Fatalf("Failed to unmarshal search result: %v", err)
 			}
 
 			if result.Total != tt.expectedCount {
@@ -382,9 +403,12 @@ func TestHandleAdvancedSearch_WorkOrders(t *testing.T) {
 
 func TestHandleAdvancedSearch_ECOs(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() {
+		time.Sleep(200 * time.Millisecond) // Let goroutines complete
+		db.Close()
+		db = origDB 
+	}()
 
 	insertAdvancedSearchTestData(t, db)
 
@@ -409,9 +433,15 @@ func TestHandleAdvancedSearch_ECOs(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var result SearchResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var apiResp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	resultBytes, _ := json.Marshal(apiResp.Data)
+	var result SearchResult
+	if err := json.Unmarshal(resultBytes, &result); err != nil {
+		t.Fatalf("Failed to unmarshal search result: %v", err)
 	}
 
 	if result.Total != 1 {
@@ -421,9 +451,12 @@ func TestHandleAdvancedSearch_ECOs(t *testing.T) {
 
 func TestHandleAdvancedSearch_Inventory(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() {
+		time.Sleep(200 * time.Millisecond) // Let goroutines complete
+		db.Close()
+		db = origDB 
+	}()
 
 	insertAdvancedSearchTestData(t, db)
 
@@ -446,9 +479,15 @@ func TestHandleAdvancedSearch_Inventory(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var result SearchResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var apiResp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	resultBytes, _ := json.Marshal(apiResp.Data)
+	var result SearchResult
+	if err := json.Unmarshal(resultBytes, &result); err != nil {
+		t.Fatalf("Failed to unmarshal search result: %v", err)
 	}
 
 	if result.Total != 2 {
@@ -458,9 +497,12 @@ func TestHandleAdvancedSearch_Inventory(t *testing.T) {
 
 func TestHandleAdvancedSearch_Pagination(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() {
+		time.Sleep(200 * time.Millisecond) // Let goroutines complete
+		db.Close()
+		db = origDB 
+	}()
 
 	insertAdvancedSearchTestData(t, db)
 
@@ -497,9 +539,15 @@ func TestHandleAdvancedSearch_Pagination(t *testing.T) {
 
 			handleAdvancedSearch(w, req)
 
-			var result SearchResult
-			if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+			var apiResp APIResponse
+			if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			resultBytes, _ := json.Marshal(apiResp.Data)
+			var result SearchResult
+			if err := json.Unmarshal(resultBytes, &result); err != nil {
+				t.Fatalf("Failed to unmarshal search result: %v", err)
 			}
 
 			if result.Page != tt.expectedPage {
@@ -516,9 +564,11 @@ func TestHandleAdvancedSearch_Pagination(t *testing.T) {
 
 func TestHandleAdvancedSearch_UnsupportedEntity(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	query := SearchQuery{
 		EntityType: "unsupported_entity",
@@ -543,9 +593,11 @@ func TestHandleAdvancedSearch_UnsupportedEntity(t *testing.T) {
 
 func TestHandleAdvancedSearch_SQLInjection(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	insertAdvancedSearchTestData(t, db)
 
@@ -581,9 +633,11 @@ func TestHandleAdvancedSearch_SQLInjection(t *testing.T) {
 
 func TestHandleSaveSavedSearch(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	savedSearch := SavedSearch{
 		Name:       "My Pending Work Orders",
@@ -630,9 +684,11 @@ func TestHandleSaveSavedSearch(t *testing.T) {
 
 func TestHandleGetSavedSearches(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	// Insert test saved searches
 	filters := `[{"field":"status","operator":"eq","value":"pending"}]`
@@ -698,9 +754,11 @@ func TestHandleGetSavedSearches(t *testing.T) {
 
 func TestHandleDeleteSavedSearch(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	filters := `[{"field":"status","operator":"eq","value":"pending"}]`
 	db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by) 
@@ -765,9 +823,11 @@ func TestHandleGetQuickFilters(t *testing.T) {
 
 func TestHandleGetSearchHistory(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	// Insert search history
 	filters := `[{"field":"status","operator":"eq","value":"pending"}]`
@@ -835,9 +895,11 @@ func TestHandleGetSearchHistory(t *testing.T) {
 
 func TestHandleAdvancedSearch_DevicesAndNCRsAndPOs(t *testing.T) {
 	origDB := db
-	defer func() { db = origDB }()
 	db = setupAdvancedSearchTestDB(t)
-	defer db.Close()
+	defer func() { 
+		db.Close()
+		db = origDB 
+	}()
 
 	insertAdvancedSearchTestData(t, db)
 

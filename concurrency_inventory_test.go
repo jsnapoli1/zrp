@@ -38,6 +38,11 @@ func setupConcurrencyTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to enable foreign keys: %v", err)
 	}
 
+	// Drop tables if they exist (for shared cache mode)
+	testDB.Exec("DROP TABLE IF EXISTS inventory")
+	testDB.Exec("DROP TABLE IF EXISTS inventory_transactions")
+	testDB.Exec("DROP TABLE IF EXISTS audit_log")
+
 	// Create inventory table
 	_, err = testDB.Exec(`
 		CREATE TABLE inventory (
