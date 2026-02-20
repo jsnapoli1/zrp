@@ -222,11 +222,17 @@ func setupTestDB(t *testing.T) *sql.DB {
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
 			description TEXT DEFAULT '',
-			status TEXT DEFAULT 'open',
+			ipn TEXT DEFAULT '',
+			serial_number TEXT DEFAULT '',
+			defect_type TEXT DEFAULT '',
+			severity TEXT DEFAULT 'minor' CHECK(severity IN ('minor','major','critical')),
+			status TEXT DEFAULT 'open' CHECK(status IN ('open','investigating','resolved','closed')),
 			priority TEXT DEFAULT 'medium',
 			root_cause TEXT DEFAULT '',
+			corrective_action TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			resolved_at DATETIME
 		)
 	`)
 	if err != nil {
