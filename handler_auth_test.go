@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -98,34 +97,12 @@ func setupAuthTestDB(t *testing.T) func() {
 	}
 }
 
-func createTestUser(t *testing.T, username, password, role string, active bool) int {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("Failed to hash password: %v", err)
-	}
-
-	activeInt := 0
-	if active {
-		activeInt = 1
-	}
-
-	result, err := db.Exec(
-		"INSERT INTO users (username, password_hash, display_name, role, active) VALUES (?, ?, ?, ?, ?)",
-		username, string(hash), username+" Display", role, activeInt,
-	)
-	if err != nil {
-		t.Fatalf("Failed to create test user: %v", err)
-	}
-
-	id, _ := result.LastInsertId()
-	return int(id)
-}
 
 func TestHandleLoginSuccess(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", true)
+	createTestUser(t, db, "testuser", "password123", "user", true)
 
 	reqBody := `{"username":"testuser","password":"password123"}`
 	req := httptest.NewRequest("POST", "/api/v1/login", bytes.NewBufferString(reqBody))
@@ -192,7 +169,7 @@ func TestHandleLoginInvalidUsername(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", true)
+	createTestUser(t, db, "testuser", "password123", "user", true)
 
 	reqBody := `{"username":"nonexistent","password":"password123"}`
 	req := httptest.NewRequest("POST", "/api/v1/login", bytes.NewBufferString(reqBody))
@@ -210,7 +187,7 @@ func TestHandleLoginInvalidPassword(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", true)
+	createTestUser(t, db, "testuser", "password123", "user", true)
 
 	reqBody := `{"username":"testuser","password":"wrongpassword"}`
 	req := httptest.NewRequest("POST", "/api/v1/login", bytes.NewBufferString(reqBody))
@@ -235,7 +212,7 @@ func TestHandleLoginInactiveUser(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", false)
+	createTestUser(t, db, "testuser", "password123", "user", false)
 
 	reqBody := `{"username":"testuser","password":"password123"}`
 	req := httptest.NewRequest("POST", "/api/v1/login", bytes.NewBufferString(reqBody))
@@ -253,7 +230,7 @@ func TestHandleLoginRateLimiting(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", true)
+	createTestUser(t, db, "testuser", "password123", "user", true)
 
 	// Make 5 login attempts
 	for i := 0; i < 5; i++ {
@@ -284,7 +261,7 @@ func TestHandleLoginRateLimitPerIP(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", true)
+	createTestUser(t, db, "testuser", "password123", "user", true)
 
 	// Make 5 attempts from IP1
 	for i := 0; i < 5; i++ {
@@ -327,7 +304,7 @@ func TestHandleLoginCleansExpiredSessions(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 
 	// Create expired session
 	expiredToken := generateToken()
@@ -354,7 +331,7 @@ func TestHandleLogoutSuccess(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 	token := generateToken()
 	expires := time.Now().Add(24 * time.Hour)
 	db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
@@ -413,7 +390,7 @@ func TestHandleMeValidSession(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "admin", true)
+	userID := createTestUser(t, db, "testuser", "password123", "admin", true)
 	token := generateToken()
 	expires := time.Now().Add(24 * time.Hour)
 	db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
@@ -478,7 +455,7 @@ func TestHandleMeExpiredSession(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 	token := generateToken()
 	expires := time.Now().Add(-1 * time.Hour)
 	db.Exec("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
@@ -499,7 +476,7 @@ func TestHandleMeInactivityTimeout(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 	token := generateToken()
 	expires := time.Now().Add(24 * time.Hour)
 	lastActivity := time.Now().Add(-31 * time.Minute).Format("2006-01-02 15:04:05")
@@ -529,7 +506,7 @@ func TestHandleMeUpdatesLastActivity(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 	token := generateToken()
 	expires := time.Now().Add(24 * time.Hour)
 	oldActivity := time.Now().Add(-5 * time.Minute).Format("2006-01-02 15:04:05")
@@ -560,7 +537,7 @@ func TestHandleChangePasswordSuccess(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "OldPassword123!", "user", true)
+	userID := createTestUser(t, db, "testuser", "OldPassword123!", "user", true)
 
 	reqBody := `{"current_password":"OldPassword123!","new_password":"NewPassword123!"}`
 	req := httptest.NewRequest("POST", "/api/v1/change-password", bytes.NewBufferString(reqBody))
@@ -592,7 +569,7 @@ func TestHandleChangePasswordWrongCurrent(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "OldPassword123!", "user", true)
+	userID := createTestUser(t, db, "testuser", "OldPassword123!", "user", true)
 
 	reqBody := `{"current_password":"WrongPassword123!","new_password":"NewPassword123!"}`
 	req := httptest.NewRequest("POST", "/api/v1/change-password", bytes.NewBufferString(reqBody))
@@ -611,7 +588,7 @@ func TestHandleChangePasswordTooShort(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "OldPassword123!", "user", true)
+	userID := createTestUser(t, db, "testuser", "OldPassword123!", "user", true)
 
 	reqBody := `{"current_password":"OldPassword123!","new_password":"short"}`
 	req := httptest.NewRequest("POST", "/api/v1/change-password", bytes.NewBufferString(reqBody))
@@ -630,7 +607,7 @@ func TestHandleChangePasswordMissingFields(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password", "user", true)
+	userID := createTestUser(t, db, "testuser", "password", "user", true)
 
 	tests := []struct {
 		name    string
@@ -714,7 +691,7 @@ func TestHandleGetCSRFToken(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 
 	req := httptest.NewRequest("GET", "/api/v1/csrf-token", nil)
 	ctx := context.WithValue(req.Context(), ctxUserID, userID)
@@ -761,7 +738,7 @@ func TestCSRFTokenCleansExpired(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	userID := createTestUser(t, "testuser", "password123", "user", true)
+	userID := createTestUser(t, db, "testuser", "password123", "user", true)
 
 	// Create expired token
 	expiredToken := generateToken()
@@ -788,7 +765,7 @@ func TestLoginCSRFToken(t *testing.T) {
 	cleanup := setupAuthTestDB(t)
 	defer cleanup()
 
-	createTestUser(t, "testuser", "password123", "user", true)
+	createTestUser(t, db, "testuser", "password123", "user", true)
 
 	reqBody := `{"username":"testuser","password":"password123"}`
 	req := httptest.NewRequest("POST", "/api/v1/login", bytes.NewBufferString(reqBody))
@@ -812,16 +789,3 @@ func TestLoginCSRFToken(t *testing.T) {
 
 // Helper functions
 
-func withUsername(req *http.Request, username string) *http.Request {
-	ctx := context.WithValue(req.Context(), ctxUsername, username)
-	return req.WithContext(ctx)
-}
-
-func withUserID(req *http.Request, userID int) *http.Request {
-	ctx := context.WithValue(req.Context(), ctxUserID, userID)
-	return req.WithContext(ctx)
-}
-
-func stringReader(s string) *strings.Reader {
-	return strings.NewReader(s)
-}
