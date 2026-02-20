@@ -12,8 +12,9 @@ import (
 
 // TestWorkOrderKitting_BasicReservation tests that creating a work order and kitting it reserves inventory
 func TestWorkOrderKitting_BasicReservation(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db
+	db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	// Create inventory with qty=10
 	_, err := db.Exec(`INSERT INTO inventory (ipn, qty_on_hand, qty_reserved) VALUES ('PART-001', 10.0, 0.0)`)
@@ -55,8 +56,9 @@ func TestWorkOrderKitting_BasicReservation(t *testing.T) {
 
 // TestWorkOrderKitting_MultipleWOsCompetingInventory tests first-come-first-served allocation
 func TestWorkOrderKitting_MultipleWOsCompetingInventory(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db
+	db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	// Create inventory with qty=10
 	_, err := db.Exec(`INSERT INTO inventory (ipn, qty_on_hand, qty_reserved) VALUES ('PART-002', 10.0, 0.0)`)
@@ -149,8 +151,9 @@ func TestWorkOrderKitting_MultipleWOsCompetingInventory(t *testing.T) {
 
 // TestWorkOrderKitting_CompletionReleasesReservation tests that completing a WO releases reserved inventory
 func TestWorkOrderKitting_CompletionReleasesReservation(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db
+	db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 	
 	// Clear any seeded inventory to avoid interference
 	db.Exec("DELETE FROM inventory")
@@ -206,8 +209,9 @@ func TestWorkOrderKitting_CompletionReleasesReservation(t *testing.T) {
 
 // TestWorkOrderKitting_CancellationReleasesReservation tests that cancelling a WO releases reserved inventory
 func TestWorkOrderKitting_CancellationReleasesReservation(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db
+	db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	// Create inventory with qty=20, reserved=7
 	_, err := db.Exec(`INSERT INTO inventory (ipn, qty_on_hand, qty_reserved) VALUES ('PART-004', 20.0, 7.0)`)
@@ -257,8 +261,9 @@ func TestWorkOrderKitting_CancellationReleasesReservation(t *testing.T) {
 
 // TestWorkOrderKitting_ReservedInventoryNotAvailableForOtherWOs tests that reserved inventory can't be double-allocated
 func TestWorkOrderKitting_ReservedInventoryNotAvailableForOtherWOs(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db
+	db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
 	// Create inventory with qty=15, already reserved=10
 	_, err := db.Exec(`INSERT INTO inventory (ipn, qty_on_hand, qty_reserved) VALUES ('PART-005', 15.0, 10.0)`)
@@ -333,8 +338,9 @@ func TestWorkOrderKitting_ReservedInventoryNotAvailableForOtherWOs(t *testing.T)
 // 3. Create WO-2 needing qty=8, verify insufficient inventory error
 // 4. Complete WO-1, verify WO-2 can now proceed
 func TestWorkOrderKitting_SecondWOProceedsAfterFirstCompletes(t *testing.T) {
-	cleanup := setupTestDB(t)
-	defer cleanup()
+	oldDB := db
+	db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 	
 	// Clear any seeded inventory to avoid interference
 	db.Exec("DELETE FROM inventory")
