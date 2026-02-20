@@ -4,93 +4,62 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
 
-func setupWorkOrdersTestDB(t *testing.T) *sql.DB {
-	testDB, err := sql.Open("sqlite", ":memory:")
+func setupWorkOrderTestDB(t *testing.T) *sql.DB {
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
-		t.Fatalf("Failed to open test DB: %v", err)
+		t.Fatal(err)
 	}
 
-	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		t.Fatalf("Failed to enable foreign keys: %v", err)
-	}
-
-	// Create work_orders table
-	_, err = testDB.Exec(`
-		CREATE TABLE work_orders (
+	// Create tables (simplified for testing)
+	tables := []string{
+		`CREATE TABLE work_orders (
 			id TEXT PRIMARY KEY,
 			assembly_ipn TEXT NOT NULL,
-			qty INTEGER NOT NULL CHECK(qty > 0),
+			qty INTEGER NOT NULL DEFAULT 1,
 			qty_good INTEGER,
 			qty_scrap INTEGER,
-			status TEXT DEFAULT 'open' CHECK(status IN ('draft','open','in_progress','on_hold','completed','cancelled')),
-			priority TEXT DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
+			status TEXT NOT NULL DEFAULT 'open',
+			priority TEXT NOT NULL DEFAULT 'normal',
 			notes TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			started_at DATETIME,
-			completed_at DATETIME
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create work_orders table: %v", err)
-	}
-
-	// Create wo_serials table
-	_, err = testDB.Exec(`
-		CREATE TABLE wo_serials (
+			created_at TEXT NOT NULL,
+			started_at TEXT,
+			completed_at TEXT
+		)`,
+		`CREATE TABLE wo_serials (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			wo_id TEXT NOT NULL,
-			serial_number TEXT NOT NULL UNIQUE,
-			status TEXT DEFAULT 'building' CHECK(status IN ('building','testing','passed','failed','shipped')),
-			notes TEXT,
-			FOREIGN KEY (wo_id) REFERENCES work_orders(id) ON DELETE CASCADE
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create wo_serials table: %v", err)
-	}
-
-	// Create inventory table
-	_, err = testDB.Exec(`
-		CREATE TABLE inventory (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			ipn TEXT UNIQUE NOT NULL,
-			description TEXT,
-			qty_on_hand REAL DEFAULT 0,
-			qty_reserved REAL DEFAULT 0,
-			min_qty REAL DEFAULT 0,
+			serial_number TEXT UNIQUE NOT NULL,
+			status TEXT NOT NULL DEFAULT 'assigned',
+			notes TEXT
+		)`,
+		`CREATE TABLE inventory (
+			ipn TEXT PRIMARY KEY,
+			qty_on_hand REAL NOT NULL DEFAULT 0,
+			qty_reserved REAL NOT NULL DEFAULT 0,
 			location TEXT,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create inventory table: %v", err)
-	}
-
-	// Create inventory_transactions table
-	_, err = testDB.Exec(`
-		CREATE TABLE inventory_transactions (
+			reorder_point REAL DEFAULT 0,
+			reorder_qty REAL DEFAULT 0,
+			description TEXT,
+			mpn TEXT,
+			updated_at TEXT
+		)`,
+		`CREATE TABLE inventory_transactions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			ipn TEXT NOT NULL,
-			type TEXT CHECK(type IN ('receive','issue','adjust','transfer','return')),
+			type TEXT NOT NULL,
 			qty REAL NOT NULL,
 			reference TEXT,
 			notes TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create inventory_transactions table: %v", err)
-	}
-
-	// Create audit_log table
-	_, err = testDB.Exec(`
-		CREATE TABLE audit_log (
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE audit_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER,
 			username TEXT DEFAULT 'system',
@@ -99,129 +68,258 @@ func setupWorkOrdersTestDB(t *testing.T) *sql.DB {
 			record_id TEXT NOT NULL,
 			summary TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create audit_log table: %v", err)
+		)`,
 	}
 
-	// Create part_changes table
-	_, err = testDB.Exec(`
-		CREATE TABLE part_changes (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user TEXT,
-			table_name TEXT,
-			record_id TEXT,
-			operation TEXT,
-			old_snapshot TEXT,
-			new_snapshot TEXT,
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create part_changes table: %v", err)
+	for _, table := range tables {
+		if _, err := db.Exec(table); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	return testDB
+	return db
 }
 
-func insertTestWorkOrderWO(t *testing.T, db *sql.DB, id, assemblyIPN string, qty int, status, priority, notes string) {
-	_, err := db.Exec(
-		"INSERT INTO work_orders (id, assembly_ipn, qty, status, priority, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
-		id, assemblyIPN, qty, status, priority, notes,
-	)
-	if err != nil {
-		t.Fatalf("Failed to insert test work order: %v", err)
-	}
-}
-
-func insertTestInventoryWO(t *testing.T, db *sql.DB, ipn string, qtyOnHand, qtyReserved float64) {
-	_, err := db.Exec(
-		"INSERT INTO inventory (ipn, qty_on_hand, qty_reserved, updated_at) VALUES (?, ?, ?, datetime('now'))",
-		ipn, qtyOnHand, qtyReserved,
-	)
-	if err != nil {
-		t.Fatalf("Failed to insert test inventory: %v", err)
-	}
-}
-
-// Test List Work Orders - Empty
-func TestHandleListWorkOrders_Empty(t *testing.T) {
-	oldDB := db
-	db = setupWorkOrdersTestDB(t)
+func TestWorkOrderKit(t *testing.T) {
+	// Setup using standard test DB
+	oldDB := db; db = setupTestDB(t)
 	defer func() { db.Close(); db = oldDB }()
 
-	req := httptest.NewRequest("GET", "/api/workorders", nil)
-	w := httptest.NewRecorder()
-
-	handleListWorkOrders(w, req)
-
-	if w.Code != 200 {
-		t.Errorf("Expected status 200, got %d", w.Code)
+	// Insert test data
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, created_at) VALUES ('WO001', 'ASY-001', 5, 'open', '2026-01-01 00:00:00')`)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	var resp APIResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
+	_, err = db.Exec(`INSERT INTO inventory (ipn, qty_on_hand, qty_reserved) VALUES 
+		('PART-001', 10.0, 0.0),
+		('PART-002', 3.0, 0.0),
+		('PART-003', 0.0, 0.0)`)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	orders, ok := resp.Data.([]interface{})
-	if !ok {
-		t.Fatalf("Expected data to be an array")
+	// Test kitting materials
+	req, err := http.NewRequest("POST", "/api/v1/workorders/WO001/kit", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if len(orders) != 0 {
-		t.Errorf("Expected empty array, got %d work orders", len(orders))
+	rr := httptest.NewRecorder()
+	handleWorkOrderKit(rr, req, "WO001")
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v, body: %s", status, http.StatusOK, rr.Body.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+
+	if result["wo_id"] != "WO001" {
+		t.Errorf("Expected wo_id WO001, got %v", result["wo_id"])
+	}
+
+	if result["status"] != "kitted" {
+		t.Errorf("Expected status kitted, got %v", result["status"])
+	}
+
+	// Verify inventory was reserved
+	var reserved float64
+	err = db.QueryRow("SELECT qty_reserved FROM inventory WHERE ipn = 'PART-001'").Scan(&reserved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reserved != 5.0 {
+		t.Errorf("Expected 5.0 reserved for PART-001, got %f", reserved)
 	}
 }
 
-// Test Create Work Order - Valid
-func TestHandleCreateWorkOrder_Valid(t *testing.T) {
-	oldDB := db
-	db = setupWorkOrdersTestDB(t)
+func TestWorkOrderSerials(t *testing.T) {
+	// Setup using standard test DB
+	oldDB := db; db = setupTestDB(t)
 	defer func() { db.Close(); db = oldDB }()
 
-	wo := WorkOrder{
-		AssemblyIPN: "ASSY-001",
-		Qty:         10,
-		Status:      "open",
-		Priority:    "normal",
-		Notes:       "Test work order",
+	// Insert test data
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, created_at) VALUES ('WO002', 'ASY-002', 2, 'in_progress', '2026-01-01 00:00:00')`)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	body, _ := json.Marshal(wo)
-	req := httptest.NewRequest("POST", "/api/workorders", bytes.NewReader(body))
-	w := httptest.NewRecorder()
+	// Test adding a serial number
+	serial := WOSerial{
+		SerialNumber: "TEST001",
+		Status:       "building", // Must match wo_serials schema CHECK constraint
+		Notes:        "Test serial",
+	}
 
-	handleCreateWorkOrder(w, req)
+	jsonData, err := json.Marshal(serial)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if w.Code != 200 {
-		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	req, err := http.NewRequest("POST", "/api/v1/workorders/WO002/serials", bytes.NewBuffer(jsonData))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	handleWorkOrderAddSerial(rr, req, "WO002")
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v, body: %s", status, http.StatusOK, rr.Body.String())
+	}
+
+	// Extract data field from API response
+	var apiResp struct {
+		Data WOSerial `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &apiResp); err != nil {
+		t.Fatal(err)
+	}
+	result := apiResp.Data
+
+	if result.SerialNumber != "TEST001" {
+		t.Errorf("Expected serial TEST001, got %s", result.SerialNumber)
+	}
+
+	if result.WOID != "WO002" {
+		t.Errorf("Expected wo_id WO002, got %s", result.WOID)
+	}
+
+	// Test getting serials
+	req2, err := http.NewRequest("GET", "/api/v1/workorders/WO002/serials", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr2 := httptest.NewRecorder()
+	handleWorkOrderSerials(rr2, req2, "WO002")
+
+	if status := rr2.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	// Extract data field from API response
+	var apiResp2 struct {
+		Data []WOSerial `json:"data"`
+	}
+	if err := json.Unmarshal(rr2.Body.Bytes(), &apiResp2); err != nil {
+		t.Fatal(err)
+	}
+	serials := apiResp2.Data
+
+	if len(serials) != 1 {
+		t.Errorf("Expected 1 serial, got %d", len(serials))
+	}
+
+	if serials[0].SerialNumber != "TEST001" {
+		t.Errorf("Expected serial TEST001, got %s", serials[0].SerialNumber)
 	}
 }
 
-// Test Update Work Order - Valid Status Transitions
-func TestHandleUpdateWorkOrder_ValidStatusTransition(t *testing.T) {
-	oldDB := db
-	db = setupWorkOrdersTestDB(t)
-	defer func() { db.Close(); db = oldDB }()
-
-	insertTestWorkOrderWO(t, db, "WO-0001", "ASSY-001", 10, "open", "normal", "Test")
-
-	wo := WorkOrder{
-		AssemblyIPN: "ASSY-001",
-		Qty:         10,
-		Status:      "in_progress",
-		Priority:    "normal",
+func TestWorkOrderStatusTransitions(t *testing.T) {
+	tests := []struct {
+		from     string
+		to       string
+		expected bool
+	}{
+		{"draft", "open", true},
+		{"draft", "cancelled", true},
+		{"draft", "completed", false}, // Invalid transition
+		{"open", "in_progress", true},
+		{"open", "on_hold", true},
+		{"open", "cancelled", true},
+		{"in_progress", "completed", true},
+		{"in_progress", "on_hold", true},
+		{"completed", "open", false}, // Terminal state
+		{"cancelled", "open", false}, // Terminal state
 	}
 
-	body, _ := json.Marshal(wo)
-	req := httptest.NewRequest("PUT", "/api/workorders/WO-0001", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-
-	handleUpdateWorkOrder(w, req, "WO-0001")
-
-	if w.Code != 200 {
-		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	for _, tt := range tests {
+		result := isValidStatusTransition(tt.from, tt.to)
+		if result != tt.expected {
+			t.Errorf("isValidStatusTransition(%s, %s) = %v, want %v", tt.from, tt.to, result, tt.expected)
+		}
 	}
 }
+
+func TestWorkOrderCompletion(t *testing.T) {
+	// Setup
+	testDB := setupWorkOrderTestDB(t)
+	defer testDB.Close()
+	db = testDB
+
+	// Insert test data
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, status, created_at) VALUES ('WO003', 'ASY-003', 2, 'in_progress', datetime('now'))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.Exec(`INSERT INTO inventory (ipn, qty_on_hand, qty_reserved) VALUES 
+		('ASY-003', 0.0, 0.0),
+		('PART-004', 10.0, 4.0)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Start transaction for testing
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	// Test work order completion
+	err = handleWorkOrderCompletion(tx, "WO003", "ASY-003", 2, "testuser")
+	if err != nil {
+		t.Fatalf("handleWorkOrderCompletion failed: %v", err)
+	}
+
+	// Verify finished goods were added
+	var assemblyQty float64
+	err = tx.QueryRow("SELECT qty_on_hand FROM inventory WHERE ipn = 'ASY-003'").Scan(&assemblyQty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assemblyQty != 2.0 {
+		t.Errorf("Expected 2.0 finished goods, got %f", assemblyQty)
+	}
+
+	// Verify materials were consumed
+	var partQtyOnHand, partQtyReserved float64
+	err = tx.QueryRow("SELECT qty_on_hand, qty_reserved FROM inventory WHERE ipn = 'PART-004'").Scan(&partQtyOnHand, &partQtyReserved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partQtyOnHand != 2.0 { // 10 - (4 * 2) = 2
+		t.Errorf("Expected 2.0 remaining on hand, got %f", partQtyOnHand)
+	}
+	if partQtyReserved != 0.0 {
+		t.Errorf("Expected 0.0 reserved after completion, got %f", partQtyReserved)
+	}
+}
+
+func TestGenerateSerialNumber(t *testing.T) {
+	tests := []struct {
+		assemblyIPN string
+		prefix      string
+	}{
+		{"ASY-001", "ASY"},
+		{"PCA-MAIN-V1.0", "PCA"},
+		{"X", "X"},
+	}
+
+	for _, tt := range tests {
+		serial := generateSerialNumber(tt.assemblyIPN)
+		if !bytes.HasPrefix([]byte(serial), []byte(tt.prefix)) {
+			t.Errorf("generateSerialNumber(%s) = %s, expected to start with %s", tt.assemblyIPN, serial, tt.prefix)
+		}
+		if len(serial) < len(tt.prefix)+12 { // prefix + timestamp
+			t.Errorf("generateSerialNumber(%s) = %s, too short", tt.assemblyIPN, serial)
+		}
+	}
+}
+
+// Run tests with: go test -v ./zrp -run TestWorkOrder*

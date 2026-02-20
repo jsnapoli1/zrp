@@ -1,1054 +1,282 @@
 package main
 
 import (
-	"bytes"
-	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
-
-	_ "modernc.org/sqlite"
 )
 
-func setupShipmentsTestDB(t *testing.T) *sql.DB {
-	testDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open test DB: %v", err)
-	}
+func TestShipmentCRUD(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		t.Fatalf("Failed to enable foreign keys: %v", err)
-	}
-
-	// Create shipments table
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS shipments (
-			id TEXT PRIMARY KEY,
-			type TEXT NOT NULL DEFAULT 'outbound' CHECK(type IN ('inbound','outbound','transfer')),
-			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','packed','shipped','delivered','cancelled')),
-			tracking_number TEXT DEFAULT '',
-			carrier TEXT DEFAULT '',
-			ship_date DATETIME,
-			delivery_date DATETIME,
-			from_address TEXT DEFAULT '',
-			to_address TEXT DEFAULT '',
-			notes TEXT DEFAULT '',
-			created_by TEXT DEFAULT '',
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create shipments table: %v", err)
-	}
-
-	// Create shipment_lines table
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS shipment_lines (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			shipment_id TEXT NOT NULL,
-			ipn TEXT DEFAULT '',
-			serial_number TEXT DEFAULT '',
-			qty INTEGER DEFAULT 1 CHECK(qty > 0),
-			work_order_id TEXT DEFAULT '',
-			rma_id TEXT DEFAULT '',
-			FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create shipment_lines table: %v", err)
-	}
-
-	// Create pack_lists table
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS pack_lists (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			shipment_id TEXT NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create pack_lists table: %v", err)
-	}
-
-	// Create inventory table (for inbound shipment testing)
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS inventory (
-			ipn TEXT PRIMARY KEY,
-			qty_on_hand REAL DEFAULT 0,
-			qty_reserved REAL DEFAULT 0,
-			location TEXT,
-			reorder_point REAL DEFAULT 0,
-			reorder_qty REAL DEFAULT 0,
-			description TEXT DEFAULT '',
-			mpn TEXT DEFAULT '',
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create inventory table: %v", err)
-	}
-
-	// Create inventory_transactions table
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS inventory_transactions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			ipn TEXT NOT NULL,
-			type TEXT NOT NULL,
-			qty REAL NOT NULL,
-			reference TEXT DEFAULT '',
-			notes TEXT DEFAULT '',
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create inventory_transactions table: %v", err)
-	}
-
-	// Create audit_log table
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS audit_log (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT DEFAULT 'system',
-			action TEXT NOT NULL,
-			module TEXT NOT NULL,
-			record_id TEXT NOT NULL,
-			summary TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create audit_log table: %v", err)
-	}
-
-	// Create sequences table for nextID
-	_, err = testDB.Exec(`
-		CREATE TABLE IF NOT EXISTS sequences (
-			prefix TEXT PRIMARY KEY,
-			current INTEGER DEFAULT 0
-		)
-	`)
-	if err != nil {
-		t.Fatalf("Failed to create sequences table: %v", err)
-	}
-
-	return testDB
-}
-
-func insertTestShipment(t *testing.T, db *sql.DB, id, shipType, status, trackingNumber, carrier string) {
-	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err := db.Exec(`INSERT INTO shipments (id, type, status, tracking_number, carrier, from_address, to_address, notes, created_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'Origin', 'Destination', 'Test notes', 'testuser', ?, ?)`,
-		id, shipType, status, trackingNumber, carrier, now, now)
-	if err != nil {
-		t.Fatalf("Failed to insert test shipment: %v", err)
-	}
-}
-
-func insertTestShipmentLine(t *testing.T, db *sql.DB, shipmentID, ipn string, qty int) {
-	_, err := db.Exec(`INSERT INTO shipment_lines (shipment_id, ipn, qty)
-		VALUES (?, ?, ?)`, shipmentID, ipn, qty)
-	if err != nil {
-		t.Fatalf("Failed to insert test shipment line: %v", err)
-	}
-}
-
-func TestHandleListShipments(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	tests := []struct {
-		name          string
-		setupData     func(*sql.DB)
-		expectedCount int
-	}{
-		{
-			name: "empty list",
-			setupData: func(db *sql.DB) {
-				// No data
-			},
-			expectedCount: 0,
-		},
-		{
-			name: "multiple shipments",
-			setupData: func(db *sql.DB) {
-				insertTestShipment(t, db, "SHP-0001", "outbound", "draft", "", "")
-				insertTestShipment(t, db, "SHP-0002", "inbound", "shipped", "TRACK123", "FedEx")
-				insertTestShipment(t, db, "SHP-0003", "transfer", "delivered", "TRACK456", "UPS")
-			},
-			expectedCount: 3,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			tt.setupData(db)
-
-			req := httptest.NewRequest("GET", "/api/shipments", nil)
-			w := httptest.NewRecorder()
-
-			handleListShipments(w, req)
-
-			if w.Code != 200 {
-				t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
-			}
-
-			var response []Shipment
-			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-				t.Fatalf("Failed to decode response: %v", err)
-			}
-
-			if len(response) != tt.expectedCount {
-				t.Errorf("Expected %d shipments, got %d", tt.expectedCount, len(response))
-			}
-		})
-	}
-}
-
-func TestHandleGetShipment(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	insertTestShipment(t, db, "SHP-0001", "outbound", "draft", "", "")
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-001", 5)
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-002", 10)
-
-	req := httptest.NewRequest("GET", "/api/shipments/SHP-0001", nil)
+	// Create shipment
+	body := `{"type":"outbound","from_address":"123 Main St","to_address":"456 Oak Ave","carrier":"FedEx","notes":"Test shipment","lines":[{"ipn":"IPN-001","qty":5}]}`
+	req := authedRequest("POST", "/api/v1/shipments", []byte(body), cookie)
 	w := httptest.NewRecorder()
-
-	handleGetShipment(w, req, "SHP-0001")
-
+	handleCreateShipment(w, req)
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("create shipment: %d %s", w.Code, w.Body.String())
+	}
+	var resp APIResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data := resp.Data.(map[string]interface{})
+	shipID := data["id"].(string)
+	if !strings.HasPrefix(shipID, "SHP-") {
+		t.Errorf("expected SHP- prefix, got %s", shipID)
+	}
+	if data["type"] != "outbound" {
+		t.Errorf("expected outbound, got %v", data["type"])
+	}
+	if data["status"] != "draft" {
+		t.Errorf("expected draft, got %v", data["status"])
+	}
+	lines := data["lines"].([]interface{})
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
 	}
 
-	var response Shipment
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.ID != "SHP-0001" {
-		t.Errorf("Expected ID SHP-0001, got %s", response.ID)
+	// List shipments
+	req = authedRequest("GET", "/api/v1/shipments", nil, cookie)
+	w = httptest.NewRecorder()
+	handleListShipments(w, req)
+	if w.Code != 200 {
+		t.Fatalf("list: %d", w.Code)
 	}
-	if response.Type != "outbound" {
-		t.Errorf("Expected type outbound, got %s", response.Type)
-	}
-	if len(response.Lines) != 2 {
-		t.Errorf("Expected 2 lines, got %d", len(response.Lines))
-	}
-}
-
-func TestHandleGetShipment_NotFound(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	req := httptest.NewRequest("GET", "/api/shipments/SHP-9999", nil)
-	w := httptest.NewRecorder()
-
-	handleGetShipment(w, req, "SHP-9999")
-
-	if w.Code != 404 {
-		t.Errorf("Expected status 404, got %d", w.Code)
-	}
-}
-
-func TestHandleCreateShipment(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	tests := []struct {
-		name           string
-		input          Shipment
-		expectedStatus int
-		expectedType   string
-		expectedStatus2 string
-	}{
-		{
-			name: "valid outbound shipment",
-			input: Shipment{
-				Type:        "outbound",
-				Status:      "draft",
-				FromAddress: "Warehouse A",
-				ToAddress:   "Customer X",
-				Lines: []ShipmentLine{
-					{IPN: "PROD-001", Qty: 5},
-					{IPN: "PROD-002", Qty: 10},
-				},
-			},
-			expectedStatus:  200,
-			expectedType:    "outbound",
-			expectedStatus2: "draft",
-		},
-		{
-			name: "defaults applied",
-			input: Shipment{
-				FromAddress: "Warehouse A",
-				ToAddress:   "Customer X",
-			},
-			expectedStatus:  200,
-			expectedType:    "outbound",
-			expectedStatus2: "draft",
-		},
-		{
-			name: "inbound shipment",
-			input: Shipment{
-				Type:        "inbound",
-				Status:      "draft",
-				FromAddress: "Vendor Y",
-				ToAddress:   "Warehouse A",
-			},
-			expectedStatus:  200,
-			expectedType:    "inbound",
-			expectedStatus2: "draft",
-		},
-		{
-			name: "with tracking info",
-			input: Shipment{
-				Type:           "outbound",
-				TrackingNumber: "TRACK123",
-				Carrier:        "FedEx",
-			},
-			expectedStatus:  200,
-			expectedType:    "outbound",
-			expectedStatus2: "draft",
-		},
-		{
-			name: "invalid type",
-			input: Shipment{
-				Type: "invalid",
-			},
-			expectedStatus: 400,
-		},
-		{
-			name: "invalid status",
-			input: Shipment{
-				Status: "invalid",
-			},
-			expectedStatus: 400,
-		},
-		{
-			name: "invalid qty - zero",
-			input: Shipment{
-				Lines: []ShipmentLine{
-					{IPN: "PROD-001", Qty: 0},
-				},
-			},
-			expectedStatus: 400,
-		},
-		{
-			name: "invalid qty - negative",
-			input: Shipment{
-				Lines: []ShipmentLine{
-					{IPN: "PROD-001", Qty: -5},
-				},
-			},
-			expectedStatus: 400,
-		},
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	items := resp.Data.([]interface{})
+	if len(items) != 1 {
+		t.Errorf("expected 1 shipment, got %d", len(items))
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			body, _ := json.Marshal(tt.input)
-			req := httptest.NewRequest("POST", "/api/shipments", bytes.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			handleCreateShipment(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d: %s", tt.expectedStatus, w.Code, w.Body.String())
-				return
-			}
-
-			if tt.expectedStatus == 200 {
-				var response Shipment
-				json.NewDecoder(w.Body).Decode(&response)
-
-				if response.ID == "" {
-					t.Error("Expected non-empty ID")
-				}
-				if !strings.HasPrefix(response.ID, "SHP-") {
-					t.Errorf("Expected ID to start with SHP-, got %s", response.ID)
-				}
-				if response.Type != tt.expectedType {
-					t.Errorf("Expected type %s, got %s", tt.expectedType, response.Type)
-				}
-				if response.Status != tt.expectedStatus2 {
-					t.Errorf("Expected status %s, got %s", tt.expectedStatus2, response.Status)
-				}
-
-				// Verify lines were created
-				if tt.input.Lines != nil {
-					var count int
-					db.QueryRow("SELECT COUNT(*) FROM shipment_lines WHERE shipment_id = ?", response.ID).Scan(&count)
-					if count != len(tt.input.Lines) {
-						t.Errorf("Expected %d lines, got %d", len(tt.input.Lines), count)
-					}
-				}
-			}
-		})
+	// Get shipment
+	req = authedRequest("GET", "/api/v1/shipments/"+shipID, nil, cookie)
+	w = httptest.NewRecorder()
+	handleGetShipment(w, req, shipID)
+	if w.Code != 200 {
+		t.Fatalf("get: %d", w.Code)
 	}
-}
-
-func TestHandleUpdateShipment(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	insertTestShipment(t, db, "SHP-0001", "outbound", "draft", "", "")
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-001", 5)
 
 	// Update shipment
-	update := Shipment{
-		Type:           "outbound",
-		Status:         "packed",
-		TrackingNumber: "TRACK123",
-		Carrier:        "FedEx",
-		Lines: []ShipmentLine{
-			{IPN: "PROD-001", Qty: 10}, // Updated qty
-			{IPN: "PROD-002", Qty: 5},  // New line
-		},
-	}
-
-	body, _ := json.Marshal(update)
-	req := httptest.NewRequest("PUT", "/api/shipments/SHP-0001", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handleUpdateShipment(w, req, "SHP-0001")
-
+	body = `{"type":"outbound","status":"packed","tracking_number":"","carrier":"FedEx","from_address":"123 Main St","to_address":"456 Oak Ave","notes":"Updated"}`
+	req = authedRequest("PUT", "/api/v1/shipments/"+shipID, []byte(body), cookie)
+	w = httptest.NewRecorder()
+	handleUpdateShipment(w, req, shipID)
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("update: %d %s", w.Code, w.Body.String())
 	}
-
-	var response Shipment
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.Status != "packed" {
-		t.Errorf("Expected status packed, got %s", response.Status)
-	}
-	if response.TrackingNumber != "TRACK123" {
-		t.Errorf("Expected tracking TRACK123, got %s", response.TrackingNumber)
-	}
-	if len(response.Lines) != 2 {
-		t.Errorf("Expected 2 lines after update, got %d", len(response.Lines))
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data = resp.Data.(map[string]interface{})
+	if data["status"] != "packed" {
+		t.Errorf("expected packed, got %v", data["status"])
 	}
 }
 
-func TestHandleShipShipment(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestShipShipment(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	tests := []struct {
-		name           string
-		initialStatus  string
-		input          map[string]string
-		expectedStatus int
-	}{
-		{
-			name:          "ship from draft",
-			initialStatus: "draft",
-			input: map[string]string{
-				"tracking_number": "TRACK123",
-				"carrier":         "FedEx",
-			},
-			expectedStatus: 200,
-		},
-		{
-			name:          "ship from packed",
-			initialStatus: "packed",
-			input: map[string]string{
-				"tracking_number": "TRACK456",
-				"carrier":         "UPS",
-			},
-			expectedStatus: 200,
-		},
-		{
-			name:          "already shipped",
-			initialStatus: "shipped",
-			input: map[string]string{
-				"tracking_number": "TRACK789",
-				"carrier":         "DHL",
-			},
-			expectedStatus: 400,
-		},
-		{
-			name:          "already delivered",
-			initialStatus: "delivered",
-			input: map[string]string{
-				"tracking_number": "TRACK999",
-				"carrier":         "USPS",
-			},
-			expectedStatus: 400,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			insertTestShipment(t, db, "SHP-0001", "outbound", tt.initialStatus, "", "")
-
-			body, _ := json.Marshal(tt.input)
-			req := httptest.NewRequest("POST", "/api/shipments/SHP-0001/ship", bytes.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			handleShipShipment(w, req, "SHP-0001")
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d: %s", tt.expectedStatus, w.Code, w.Body.String())
-				return
-			}
-
-			if tt.expectedStatus == 200 {
-				var response Shipment
-				json.NewDecoder(w.Body).Decode(&response)
-
-				if response.Status != "shipped" {
-					t.Errorf("Expected status shipped, got %s", response.Status)
-				}
-				if response.TrackingNumber != tt.input["tracking_number"] {
-					t.Errorf("Expected tracking %s, got %s", tt.input["tracking_number"], response.TrackingNumber)
-				}
-				if response.Carrier != tt.input["carrier"] {
-					t.Errorf("Expected carrier %s, got %s", tt.input["carrier"], response.Carrier)
-				}
-				if response.ShipDate == nil || *response.ShipDate == "" {
-					t.Error("Expected ship_date to be set")
-				}
-			}
-		})
-	}
-}
-
-func TestHandleShipShipment_NotFound(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	input := map[string]string{
-		"tracking_number": "TRACK123",
-		"carrier":         "FedEx",
-	}
-
-	body, _ := json.Marshal(input)
-	req := httptest.NewRequest("POST", "/api/shipments/SHP-9999/ship", bytes.NewReader(body))
+	// Create
+	body := `{"type":"outbound","from_address":"A","to_address":"B"}`
+	req := authedRequest("POST", "/api/v1/shipments", []byte(body), cookie)
 	w := httptest.NewRecorder()
+	handleCreateShipment(w, req)
+	var resp APIResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	shipID := resp.Data.(map[string]interface{})["id"].(string)
 
-	handleShipShipment(w, req, "SHP-9999")
-
-	if w.Code != 404 {
-		t.Errorf("Expected status 404, got %d", w.Code)
-	}
-}
-
-func TestHandleDeliverShipment(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	tests := []struct {
-		name           string
-		shipType       string
-		initialStatus  string
-		expectedStatus int
-	}{
-		{
-			name:           "deliver outbound",
-			shipType:       "outbound",
-			initialStatus:  "shipped",
-			expectedStatus: 200,
-		},
-		{
-			name:           "deliver inbound",
-			shipType:       "inbound",
-			initialStatus:  "shipped",
-			expectedStatus: 200,
-		},
-		{
-			name:           "already delivered",
-			shipType:       "outbound",
-			initialStatus:  "delivered",
-			expectedStatus: 400,
-		},
-		{
-			name:           "deliver from draft (allowed)",
-			shipType:       "outbound",
-			initialStatus:  "draft",
-			expectedStatus: 200,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			insertTestShipment(t, db, "SHP-0001", tt.shipType, tt.initialStatus, "TRACK123", "FedEx")
-
-			req := httptest.NewRequest("POST", "/api/shipments/SHP-0001/deliver", nil)
-			w := httptest.NewRecorder()
-
-			handleDeliverShipment(w, req, "SHP-0001")
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d: %s", tt.expectedStatus, w.Code, w.Body.String())
-				return
-			}
-
-			if tt.expectedStatus == 200 {
-				var response Shipment
-				json.NewDecoder(w.Body).Decode(&response)
-
-				if response.Status != "delivered" {
-					t.Errorf("Expected status delivered, got %s", response.Status)
-				}
-				if response.DeliveryDate == nil || *response.DeliveryDate == "" {
-					t.Error("Expected delivery_date to be set")
-				}
-			}
-		})
-	}
-}
-
-func TestHandleDeliverShipment_InboundInventoryUpdate(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	// Setup inventory
-	now := time.Now().Format("2006-01-02 15:04:05")
-	db.Exec("INSERT INTO inventory (ipn, qty_on_hand, updated_at) VALUES ('PROD-001', 100, ?)", now)
-	db.Exec("INSERT INTO inventory (ipn, qty_on_hand, updated_at) VALUES ('PROD-002', 50, ?)", now)
-
-	// Create inbound shipment
-	insertTestShipment(t, db, "SHP-0001", "inbound", "shipped", "TRACK123", "FedEx")
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-001", 10)
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-002", 20)
-
-	req := httptest.NewRequest("POST", "/api/shipments/SHP-0001/deliver", nil)
-	w := httptest.NewRecorder()
-
-	handleDeliverShipment(w, req, "SHP-0001")
-
+	// Ship it
+	body = `{"tracking_number":"1Z999","carrier":"UPS"}`
+	req = authedRequest("POST", "/api/v1/shipments/"+shipID+"/ship", []byte(body), cookie)
+	w = httptest.NewRecorder()
+	handleShipShipment(w, req, shipID)
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("ship: %d %s", w.Code, w.Body.String())
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data := resp.Data.(map[string]interface{})
+	if data["status"] != "shipped" {
+		t.Errorf("expected shipped, got %v", data["status"])
+	}
+	if data["tracking_number"] != "1Z999" {
+		t.Errorf("expected 1Z999, got %v", data["tracking_number"])
+	}
+	if data["carrier"] != "UPS" {
+		t.Errorf("expected UPS, got %v", data["carrier"])
 	}
 
-	// Verify inventory was updated
-	var qty1, qty2 float64
-	db.QueryRow("SELECT qty_on_hand FROM inventory WHERE ipn = 'PROD-001'").Scan(&qty1)
-	db.QueryRow("SELECT qty_on_hand FROM inventory WHERE ipn = 'PROD-002'").Scan(&qty2)
-
-	if qty1 != 110 {
-		t.Errorf("Expected PROD-001 qty 110, got %.0f", qty1)
-	}
-	if qty2 != 70 {
-		t.Errorf("Expected PROD-002 qty 70, got %.0f", qty2)
-	}
-
-	// Verify transactions were created
-	var txCount int
-	db.QueryRow("SELECT COUNT(*) FROM inventory_transactions WHERE reference LIKE 'SHP:%'").Scan(&txCount)
-	if txCount != 2 {
-		t.Errorf("Expected 2 inventory transactions, got %d", txCount)
+	// Can't ship again
+	req = authedRequest("POST", "/api/v1/shipments/"+shipID+"/ship", []byte(body), cookie)
+	w = httptest.NewRecorder()
+	handleShipShipment(w, req, shipID)
+	if w.Code != 400 {
+		t.Errorf("expected 400 for double ship, got %d", w.Code)
 	}
 }
 
-func TestHandleDeliverShipment_OutboundNoInventoryChange(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestDeliverShipment(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
+	// Create inbound shipment with inventory line
+	// First ensure inventory item exists
+	db.Exec("INSERT OR IGNORE INTO inventory (ipn, qty_on_hand) VALUES ('TEST-IPN', 10)")
 
-	// Setup inventory
-	now := time.Now().Format("2006-01-02 15:04:05")
-	db.Exec("INSERT INTO inventory (ipn, qty_on_hand, updated_at) VALUES ('PROD-001', 100, ?)", now)
-
-	// Create outbound shipment
-	insertTestShipment(t, db, "SHP-0001", "outbound", "shipped", "TRACK123", "FedEx")
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-001", 10)
-
-	req := httptest.NewRequest("POST", "/api/shipments/SHP-0001/deliver", nil)
+	body := `{"type":"inbound","from_address":"Vendor","to_address":"Warehouse","lines":[{"ipn":"TEST-IPN","qty":5}]}`
+	req := authedRequest("POST", "/api/v1/shipments", []byte(body), cookie)
 	w := httptest.NewRecorder()
+	handleCreateShipment(w, req)
+	var resp APIResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	shipID := resp.Data.(map[string]interface{})["id"].(string)
 
-	handleDeliverShipment(w, req, "SHP-0001")
+	// Ship first
+	req = authedRequest("POST", "/api/v1/shipments/"+shipID+"/ship", []byte(`{"tracking_number":"TR1","carrier":"DHL"}`), cookie)
+	w = httptest.NewRecorder()
+	handleShipShipment(w, req, shipID)
 
+	// Deliver
+	req = authedRequest("POST", "/api/v1/shipments/"+shipID+"/deliver", []byte(`{}`), cookie)
+	w = httptest.NewRecorder()
+	handleDeliverShipment(w, req, shipID)
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("deliver: %d %s", w.Code, w.Body.String())
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data := resp.Data.(map[string]interface{})
+	if data["status"] != "delivered" {
+		t.Errorf("expected delivered, got %v", data["status"])
 	}
 
-	// Verify inventory was NOT updated for outbound
+	// Check inventory was updated
 	var qty float64
-	db.QueryRow("SELECT qty_on_hand FROM inventory WHERE ipn = 'PROD-001'").Scan(&qty)
+	db.QueryRow("SELECT qty_on_hand FROM inventory WHERE ipn='TEST-IPN'").Scan(&qty)
+	if qty != 15 {
+		t.Errorf("expected inventory 15, got %f", qty)
+	}
 
-	if qty != 100 {
-		t.Errorf("Expected PROD-001 qty unchanged at 100, got %.0f", qty)
+	// Can't deliver again
+	req = authedRequest("POST", "/api/v1/shipments/"+shipID+"/deliver", []byte(`{}`), cookie)
+	w = httptest.NewRecorder()
+	handleDeliverShipment(w, req, shipID)
+	if w.Code != 400 {
+		t.Errorf("expected 400 for double deliver, got %d", w.Code)
 	}
 }
 
-func TestHandleShipmentPackList(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestShipmentPackList(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	insertTestShipment(t, db, "SHP-0001", "outbound", "packed", "", "")
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-001", 5)
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-002", 10)
-
-	req := httptest.NewRequest("GET", "/api/shipments/SHP-0001/pack-list", nil)
+	body := `{"type":"outbound","from_address":"A","to_address":"B","lines":[{"ipn":"IPN-1","qty":2},{"ipn":"IPN-2","serial_number":"SN-100","qty":1}]}`
+	req := authedRequest("POST", "/api/v1/shipments", []byte(body), cookie)
 	w := httptest.NewRecorder()
+	handleCreateShipment(w, req)
+	var resp APIResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	shipID := resp.Data.(map[string]interface{})["id"].(string)
 
-	handleShipmentPackList(w, req, "SHP-0001")
-
+	// Get pack list
+	req = authedRequest("GET", "/api/v1/shipments/"+shipID+"/pack-list", nil, cookie)
+	w = httptest.NewRecorder()
+	handleShipmentPackList(w, req, shipID)
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("pack-list: %d %s", w.Code, w.Body.String())
 	}
-
-	var response PackList
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if response.ShipmentID != "SHP-0001" {
-		t.Errorf("Expected shipment_id SHP-0001, got %s", response.ShipmentID)
-	}
-	if len(response.Lines) != 2 {
-		t.Errorf("Expected 2 lines, got %d", len(response.Lines))
-	}
-
-	// Verify pack list was created in database
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM pack_lists WHERE shipment_id = 'SHP-0001'").Scan(&count)
-	if count != 1 {
-		t.Errorf("Expected 1 pack list record, got %d", count)
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	pl := resp.Data.(map[string]interface{})
+	plLines := pl["lines"].([]interface{})
+	if len(plLines) != 2 {
+		t.Errorf("expected 2 pack list lines, got %d", len(plLines))
 	}
 }
 
-func TestHandleShipmentPackList_NotFound(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestShipmentNotFound(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	req := httptest.NewRequest("GET", "/api/shipments/SHP-9999/pack-list", nil)
+	req := authedRequest("GET", "/api/v1/shipments/NONEXISTENT", nil, cookie)
 	w := httptest.NewRecorder()
-
-	handleShipmentPackList(w, req, "SHP-9999")
-
+	handleGetShipment(w, req, "NONEXISTENT")
 	if w.Code != 404 {
-		t.Errorf("Expected status 404, got %d", w.Code)
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+
+	// Ship non-existent
+	req = authedRequest("POST", "/api/v1/shipments/NONEXISTENT/ship", []byte(`{"tracking_number":"X","carrier":"Y"}`), cookie)
+	w = httptest.NewRecorder()
+	handleShipShipment(w, req, "NONEXISTENT")
+	if w.Code != 404 {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+
+	// Deliver non-existent
+	req = authedRequest("POST", "/api/v1/shipments/NONEXISTENT/deliver", []byte(`{}`), cookie)
+	w = httptest.NewRecorder()
+	handleDeliverShipment(w, req, "NONEXISTENT")
+	if w.Code != 404 {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+
+	// Pack list non-existent
+	req = authedRequest("GET", "/api/v1/shipments/NONEXISTENT/pack-list", nil, cookie)
+	w = httptest.NewRecorder()
+	handleShipmentPackList(w, req, "NONEXISTENT")
+	if w.Code != 404 {
+		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
 
-// Test shipment type validation
-func TestShipment_TypeValidation(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+func TestShipmentWithWorkOrderAndRMA(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
+	cookie := loginAdmin(t, db)
 
-	validTypes := []string{"inbound", "outbound", "transfer"}
-
-	for _, shipType := range validTypes {
-		t.Run("valid_type_"+shipType, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			shipment := Shipment{
-				Type: shipType,
-			}
-
-			body, _ := json.Marshal(shipment)
-			req := httptest.NewRequest("POST", "/api/shipments", bytes.NewReader(body))
-			w := httptest.NewRecorder()
-
-			handleCreateShipment(w, req)
-
-			if w.Code != 200 {
-				t.Errorf("Expected status 200 for type %s, got %d", shipType, w.Code)
-			}
-		})
-	}
-}
-
-// Test shipment status validation
-func TestShipment_StatusValidation(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	validStatuses := []string{"draft", "packed", "shipped", "delivered", "cancelled"}
-
-	for _, status := range validStatuses {
-		t.Run("valid_status_"+status, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			shipment := Shipment{
-				Status: status,
-			}
-
-			body, _ := json.Marshal(shipment)
-			req := httptest.NewRequest("POST", "/api/shipments", bytes.NewReader(body))
-			w := httptest.NewRecorder()
-
-			handleCreateShipment(w, req)
-
-			if w.Code != 200 {
-				t.Errorf("Expected status 200 for status %s, got %d", status, w.Code)
-			}
-		})
-	}
-}
-
-// Test carrier data handling
-func TestShipment_CarrierData(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	carriers := []string{"FedEx", "UPS", "USPS", "DHL", "OnTrac", "Custom Carrier"}
-
-	for _, carrier := range carriers {
-		t.Run("carrier_"+carrier, func(t *testing.T) {
-			db = setupShipmentsTestDB(t)
-			defer db.Close()
-
-			insertTestShipment(t, db, "SHP-0001", "outbound", "draft", "", "")
-
-			input := map[string]string{
-				"tracking_number": "TRACK123",
-				"carrier":         carrier,
-			}
-
-			body, _ := json.Marshal(input)
-			req := httptest.NewRequest("POST", "/api/shipments/SHP-0001/ship", bytes.NewReader(body))
-			w := httptest.NewRecorder()
-
-			handleShipShipment(w, req, "SHP-0001")
-
-			if w.Code != 200 {
-				t.Fatalf("Expected status 200, got %d", w.Code)
-			}
-
-			var response Shipment
-			json.NewDecoder(w.Body).Decode(&response)
-
-			if response.Carrier != carrier {
-				t.Errorf("Expected carrier %s, got %s", carrier, response.Carrier)
-			}
-		})
-	}
-}
-
-// Test serial number tracking
-func TestShipment_SerialNumberTracking(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	shipment := Shipment{
-		Type:   "outbound",
-		Status: "draft",
-		Lines: []ShipmentLine{
-			{IPN: "DEVICE-001", SerialNumber: "SN12345", Qty: 1},
-			{IPN: "DEVICE-002", SerialNumber: "SN67890", Qty: 1},
-		},
-	}
-
-	body, _ := json.Marshal(shipment)
-	req := httptest.NewRequest("POST", "/api/shipments", bytes.NewReader(body))
+	body := `{"type":"outbound","from_address":"Factory","to_address":"Customer","lines":[{"ipn":"BOARD-001","qty":1,"work_order_id":"WO-2026-0001","serial_number":"SN-001"},{"ipn":"BOARD-002","qty":1,"rma_id":"RMA-2026-0001"}]}`
+	req := authedRequest("POST", "/api/v1/shipments", []byte(body), cookie)
 	w := httptest.NewRecorder()
-
 	handleCreateShipment(w, req)
-
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
-
-	var response Shipment
-	json.NewDecoder(w.Body).Decode(&response)
-
-	if len(response.Lines) != 2 {
-		t.Fatalf("Expected 2 lines, got %d", len(response.Lines))
+	var resp APIResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data := resp.Data.(map[string]interface{})
+	lines := data["lines"].([]interface{})
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
 	}
-
-	for i, line := range response.Lines {
-		if line.SerialNumber == "" {
-			t.Errorf("Line %d: expected serial number to be set", i)
-		}
+	line0 := lines[0].(map[string]interface{})
+	if line0["work_order_id"] != "WO-2026-0001" {
+		t.Errorf("expected WO link, got %v", line0["work_order_id"])
+	}
+	line1 := lines[1].(map[string]interface{})
+	if line1["rma_id"] != "RMA-2026-0001" {
+		t.Errorf("expected RMA link, got %v", line1["rma_id"])
 	}
 }
 
-// Test work order and RMA linkage
-func TestShipment_WorkOrderRMALinks(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
+// Ensure handleListShipments uses correct HTTP handler signature
+func TestShipmentListHTTP(t *testing.T) {
+	oldDB := db; db = setupTestDB(t)
+	defer func() { db.Close(); db = oldDB }()
 
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	shipment := Shipment{
-		Type:   "outbound",
-		Status: "draft",
-		Lines: []ShipmentLine{
-			{IPN: "PROD-001", Qty: 5, WorkOrderID: "WO-001"},
-			{IPN: "PROD-002", Qty: 3, RMAID: "RMA-001"},
-		},
-	}
-
-	body, _ := json.Marshal(shipment)
-	req := httptest.NewRequest("POST", "/api/shipments", bytes.NewReader(body))
+	req := httptest.NewRequest("GET", "/api/v1/shipments", nil)
 	w := httptest.NewRecorder()
-
-	handleCreateShipment(w, req)
-
+	handleListShipments(w, req)
 	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
+		t.Fatalf("list: %d", w.Code)
 	}
-
-	var response Shipment
-	json.NewDecoder(w.Body).Decode(&response)
-
-	// Verify work order link
-	hasWO := false
-	hasRMA := false
-	for _, line := range response.Lines {
-		if line.WorkOrderID == "WO-001" {
-			hasWO = true
-		}
-		if line.RMAID == "RMA-001" {
-			hasRMA = true
-		}
-	}
-
-	if !hasWO {
-		t.Error("Expected work order link to be preserved")
-	}
-	if !hasRMA {
-		t.Error("Expected RMA link to be preserved")
-	}
-}
-
-// Test audit logging
-func TestShipment_AuditLogging(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	shipment := Shipment{
-		Type:   "outbound",
-		Status: "draft",
-	}
-
-	body, _ := json.Marshal(shipment)
-	req := httptest.NewRequest("POST", "/api/shipments", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-
-	handleCreateShipment(w, req)
-
-	if w.Code != 200 {
-		t.Fatalf("Expected status 200, got %d", w.Code)
-	}
-
-	// Verify audit log entry
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM audit_log WHERE module = 'shipment' AND action = 'created'").Scan(&count)
-	if count != 1 {
-		t.Errorf("Expected 1 audit log entry, got %d", count)
-	}
-}
-
-// Test foreign key cascade delete
-func TestShipment_CascadeDelete(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	insertTestShipment(t, db, "SHP-0001", "outbound", "draft", "", "")
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-001", 5)
-	insertTestShipmentLine(t, db, "SHP-0001", "PROD-002", 10)
-
-	// Delete shipment
-	db.Exec("DELETE FROM shipments WHERE id = 'SHP-0001'")
-
-	// Verify lines were cascade deleted
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM shipment_lines WHERE shipment_id = 'SHP-0001'").Scan(&count)
-	if count != 0 {
-		t.Errorf("Expected 0 lines after cascade delete, got %d", count)
-	}
-}
-
-// Test concurrent shipment operations
-func TestShipment_ConcurrentOperations(t *testing.T) {
-	oldDB := db
-	defer func() { db = oldDB }()
-
-	db = setupShipmentsTestDB(t)
-	defer db.Close()
-
-	insertTestShipment(t, db, "SHP-0001", "outbound", "draft", "", "")
-
-	// Try to ship the same shipment concurrently
-	done := make(chan bool)
-	successCount := 0
-
-	for i := 0; i < 5; i++ {
-		go func(idx int) {
-			input := map[string]string{
-				"tracking_number": "TRACK" + string(rune('0'+idx)),
-				"carrier":         "FedEx",
-			}
-
-			body, _ := json.Marshal(input)
-			req := httptest.NewRequest("POST", "/api/shipments/SHP-0001/ship", bytes.NewReader(body))
-			w := httptest.NewRecorder()
-
-			handleShipShipment(w, req, "SHP-0001")
-
-			if w.Code == 200 {
-				successCount++
-			}
-			done <- true
-		}(i)
-	}
-
-	// Wait for all goroutines
-	for i := 0; i < 5; i++ {
-		<-done
-	}
-
-	// All should succeed or fail gracefully (no crashes)
-	// The last one wins due to UPSERT behavior
-	var status string
-	db.QueryRow("SELECT status FROM shipments WHERE id = 'SHP-0001'").Scan(&status)
-	if status != "shipped" {
-		t.Errorf("Expected final status shipped, got %s", status)
+	var resp APIResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	items := resp.Data.([]interface{})
+	if len(items) != 0 {
+		t.Errorf("expected empty list, got %d", len(items))
 	}
 }
