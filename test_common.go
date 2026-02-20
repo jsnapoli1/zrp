@@ -189,16 +189,31 @@ func setupTestDB(t *testing.T) *sql.DB {
 	_, err = testDB.Exec(`
 		CREATE TABLE IF NOT EXISTS inventory (
 			ipn TEXT PRIMARY KEY,
-			qty_on_hand REAL DEFAULT 0,
-			qty_reserved REAL DEFAULT 0,
+			qty_on_hand REAL DEFAULT 0 CHECK(qty_on_hand >= 0),
+			qty_reserved REAL DEFAULT 0 CHECK(qty_reserved >= 0),
 			location TEXT DEFAULT '',
-			reorder_point REAL DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			reorder_point REAL DEFAULT 0 CHECK(reorder_point >= 0),
+			reorder_qty REAL DEFAULT 0 CHECK(reorder_qty >= 0),
+			description TEXT DEFAULT '',
+			mpn TEXT DEFAULT '',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
 	if err != nil {
 		t.Fatalf("Failed to create inventory table: %v", err)
+	}
+
+	// Create inventory_transactions table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS inventory_transactions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, ipn TEXT NOT NULL,
+			type TEXT NOT NULL CHECK(type IN ('receive','issue','adjust','transfer','return','scrap')),
+			qty REAL NOT NULL, reference TEXT, notes TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create inventory_transactions table: %v", err)
 	}
 
 	// Create ncrs table
@@ -233,6 +248,77 @@ func setupTestDB(t *testing.T) *sql.DB {
 	`)
 	if err != nil {
 		t.Fatalf("Failed to create ecos table: %v", err)
+	}
+
+	// Create work_orders table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS work_orders (
+			id TEXT PRIMARY KEY, assembly_ipn TEXT NOT NULL,
+			qty INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
+			qty_good INTEGER DEFAULT 0,
+			qty_scrap INTEGER DEFAULT 0,
+			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','open','in_progress','completed','cancelled','on_hold')),
+			priority TEXT DEFAULT 'normal' CHECK(priority IN ('low','normal','high','critical')),
+			notes TEXT,
+			due_date TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			started_at DATETIME, completed_at DATETIME
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create work_orders table: %v", err)
+	}
+
+	// Create wo_serials table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS wo_serials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, wo_id TEXT NOT NULL,
+			serial_number TEXT NOT NULL,
+			status TEXT DEFAULT 'building' CHECK(status IN ('building','testing','complete','failed','scrapped')),
+			notes TEXT, UNIQUE(serial_number),
+			FOREIGN KEY (wo_id) REFERENCES work_orders(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create wo_serials table: %v", err)
+	}
+
+	// Create parts table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS parts (
+			ipn TEXT PRIMARY KEY,
+			category TEXT DEFAULT '',
+			description TEXT DEFAULT '',
+			mpn TEXT DEFAULT '',
+			manufacturer TEXT DEFAULT '',
+			lifecycle TEXT DEFAULT 'active',
+			status TEXT DEFAULT 'active',
+			notes TEXT DEFAULT '',
+			fields TEXT DEFAULT '{}',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create parts table: %v", err)
+	}
+
+	// Create bom table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS bom (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			parent_ipn TEXT NOT NULL,
+			child_ipn TEXT NOT NULL,
+			quantity REAL NOT NULL DEFAULT 1,
+			reference_designator TEXT DEFAULT '',
+			notes TEXT DEFAULT '',
+			UNIQUE(parent_ipn, child_ipn),
+			FOREIGN KEY (parent_ipn) REFERENCES parts(ipn),
+			FOREIGN KEY (child_ipn) REFERENCES parts(ipn)
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create bom table: %v", err)
 	}
 
 	return testDB

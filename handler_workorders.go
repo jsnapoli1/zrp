@@ -131,7 +131,7 @@ func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 	defer tx.Rollback()
 
 	// Update work order
-	_, err = tx.Exec("UPDATE work_orders SET assembly_ipn=?,qty=?,qty_good=?,qty_scrap=?,status=?,priority=?,notes=?,started_at=CASE WHEN ?='in_progress' AND started_at IS NULL THEN ? ELSE started_at END,completed_at=CASE WHEN ?='complete' THEN ? ELSE completed_at END WHERE id=?",
+	_, err = tx.Exec("UPDATE work_orders SET assembly_ipn=?,qty=?,qty_good=?,qty_scrap=?,status=?,priority=?,notes=?,started_at=CASE WHEN ?='in_progress' AND started_at IS NULL THEN ? ELSE started_at END,completed_at=CASE WHEN ?='completed' THEN ? ELSE completed_at END WHERE id=?",
 		wo.AssemblyIPN, wo.Qty, wo.QtyGood, wo.QtyScrap, wo.Status, wo.Priority, wo.Notes, wo.Status, now, wo.Status, now, id)
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
@@ -231,11 +231,10 @@ func handleWorkOrderCompletion(tx *sql.Tx, woID, assemblyIPN string, qty int, us
 			continue
 		}
 		
-		// Consume the reserved quantity multiplied by work order qty
-		// The reserved amount is per-unit, so multiply by qty to get total consumed
+		// Consume the reserved quantity
 		// TODO: Track which inventory is reserved for which WO to avoid consuming
 		// inventory reserved for other WOs
-		consumed := reserved * float64(qty)
+		consumed := reserved
 		
 		// Deduct from on_hand and release reservation
 		_, err = tx.Exec("UPDATE inventory SET qty_on_hand = qty_on_hand - ?, qty_reserved = qty_reserved - ?, updated_at = ? WHERE ipn = ?",
