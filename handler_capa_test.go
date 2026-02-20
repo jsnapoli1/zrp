@@ -274,10 +274,10 @@ func TestHandleUpdateCAPA_CloseWithoutApprovals(t *testing.T) {
 	handleUpdateCAPA(w, req, "CAPA-001")
 
 	if w.Code != 400 {
-		t.Errorf("Expected status 400, got %d", w.Code)
+		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
 	}
 
 	if !bytes.Contains(w.Body.Bytes(), []byte("approval required")) {
-		t.Error("Expected error about missing approvals")
+		t.Errorf("Expected error about missing approvals, got: %s", w.Body.String())
 	}
 }

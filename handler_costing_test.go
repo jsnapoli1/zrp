@@ -136,8 +136,13 @@ func TestCostRollup_Calculation(t *testing.T) {
 				t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 			}
 
+			var apiResp APIResponse
+			json.NewDecoder(w.Body).Decode(&apiResp)
+			
+			// Convert apiResp.Data to CostAnalysis
+			dataBytes, _ := json.Marshal(apiResp.Data)
 			var response CostAnalysis
-			json.NewDecoder(w.Body).Decode(&response)
+			json.Unmarshal(dataBytes, &response)
 
 			if response.TotalCost != tt.expectedTotal {
 				t.Errorf("Expected total_cost %.3f, got %.3f", tt.expectedTotal, response.TotalCost)
@@ -226,8 +231,12 @@ func TestCostRollup_MarginCalculation(t *testing.T) {
 				t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 			}
 
+			var apiResp APIResponse
+			json.NewDecoder(w.Body).Decode(&apiResp)
+			
+			dataBytes, _ := json.Marshal(apiResp.Data)
 			var response CostAnalysis
-			json.NewDecoder(w.Body).Decode(&response)
+			json.Unmarshal(dataBytes, &response)
 
 			// Allow small floating point error
 			marginDiff := response.MarginPct - tt.expectedMargin
@@ -264,8 +273,12 @@ func TestCostRollup_NoPricing(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
+	var apiResp APIResponse
+	json.NewDecoder(w.Body).Decode(&apiResp)
+	
+	dataBytes, _ := json.Marshal(apiResp.Data)
 	var response CostAnalysis
-	json.NewDecoder(w.Body).Decode(&response)
+	json.Unmarshal(dataBytes, &response)
 
 	// When no pricing exists, margin should be 0
 	if response.MarginPct != 0 {
@@ -302,8 +315,12 @@ func TestCostRollup_ComponentValidation(t *testing.T) {
 		t.Fatalf("Expected status 200 (current behavior), got %d", w.Code)
 	}
 
+	var apiResp APIResponse
+	json.NewDecoder(w.Body).Decode(&apiResp)
+	
+	dataBytes, _ := json.Marshal(apiResp.Data)
 	var response CostAnalysis
-	json.NewDecoder(w.Body).Decode(&response)
+	json.Unmarshal(dataBytes, &response)
 
 	// Document current behavior: negative BOM cost results in negative total
 	expectedTotal := -10.0 + 50.0 + 25.0
@@ -401,8 +418,12 @@ func TestCostRollup_LargeNumbers(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d", w.Code)
 	}
 
+	var apiResp APIResponse
+	json.NewDecoder(w.Body).Decode(&apiResp)
+	
+	dataBytes, _ := json.Marshal(apiResp.Data)
 	var response CostAnalysis
-	json.NewDecoder(w.Body).Decode(&response)
+	json.Unmarshal(dataBytes, &response)
 
 	expectedTotal := 1_750_000.00
 	if response.TotalCost != expectedTotal {
@@ -466,8 +487,12 @@ func TestCostRollup_MaterialLaborBreakdown(t *testing.T) {
 			w := httptest.NewRecorder()
 			handleCreateCostAnalysis(w, req)
 
+			var apiResp APIResponse
+			json.NewDecoder(w.Body).Decode(&apiResp)
+			
+			dataBytes, _ := json.Marshal(apiResp.Data)
 			var response CostAnalysis
-			json.NewDecoder(w.Body).Decode(&response)
+			json.Unmarshal(dataBytes, &response)
 
 			// Calculate actual percentages
 			totalCost := response.TotalCost

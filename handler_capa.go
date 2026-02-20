@@ -169,16 +169,6 @@ func handleUpdateCAPA(w http.ResponseWriter, r *http.Request, id string) {
 	
 	now := time.Now().Format("2006-01-02 15:04:05")
 
-	// Validate status transitions
-	if status == "closed" && effectivenessCheck == "" {
-		jsonErr(w, "effectiveness check required before closing", 400)
-		return
-	}
-	if status == "closed" && (approvedByQE == "" || approvedByMgr == "") {
-		jsonErr(w, "QE and Manager approval required before closing", 400)
-		return
-	}
-
 	// Get current CAPA state
 	var currentCAPA CAPA
 	var qeAt, mgrAt sql.NullString
@@ -206,6 +196,23 @@ func handleUpdateCAPA(w http.ResponseWriter, r *http.Request, id string) {
 	if owner == "" { owner = currentCAPA.Owner }
 	if dueDate == "" { dueDate = currentCAPA.DueDate }
 	if effectivenessCheck == "" { effectivenessCheck = currentCAPA.EffectivenessCheck }
+
+	// Validate status transitions (after merging current values)
+	if status == "closed" && effectivenessCheck == "" {
+		jsonErr(w, "effectiveness check required before closing", 400)
+		return
+	}
+	if status == "closed" && (approvedByQE == "" || approvedByMgr == "") {
+		// Check current approvals too
+		checkApprovedByQE := approvedByQE
+		checkApprovedByMgr := approvedByMgr
+		if checkApprovedByQE == "" { checkApprovedByQE = currentCAPA.ApprovedByQE }
+		if checkApprovedByMgr == "" { checkApprovedByMgr = currentCAPA.ApprovedByMgr }
+		if checkApprovedByQE == "" || checkApprovedByMgr == "" {
+			jsonErr(w, "QE and Manager approval required before closing", 400)
+			return
+		}
+	}
 
 	// Handle approval actions with security (Gap 5.4)
 	var newQEAt, newMgrAt interface{}

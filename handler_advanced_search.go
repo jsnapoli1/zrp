@@ -45,7 +45,9 @@ func handleAdvancedSearch(w http.ResponseWriter, r *http.Request) {
 	// Log search to history
 	go logSearchHistory(getUserFromRequest(r), query)
 
-	jsonResp(w, result)
+	// Return SearchResult directly (not wrapped in APIResponse)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // executeAdvancedSearch performs the search based on entity type
@@ -388,9 +390,11 @@ func searchNCRs(query SearchQuery) (*SearchResult, error) {
 
 	var ncrs []map[string]interface{}
 	for rows.Next() {
-		var id, title, description, ipn, serialNum, defectType, severity, status string
-		var rootCause, correctiveAction, createdBy string
-		var createdAt, resolvedAt *time.Time
+		var id, title, severity, status string
+		var description, ipn, serialNum, defectType sql.NullString
+		var rootCause, correctiveAction, createdBy sql.NullString
+		var createdAt sql.NullTime
+		var resolvedAt sql.NullTime
 		
 		if err := rows.Scan(&id, &title, &description, &ipn, &serialNum, &defectType,
 			&severity, &status, &rootCause, &correctiveAction, &createdAt, &resolvedAt, &createdBy); err != nil {
@@ -400,17 +404,17 @@ func searchNCRs(query SearchQuery) (*SearchResult, error) {
 		ncr := map[string]interface{}{
 			"id":                 id,
 			"title":              title,
-			"description":        description,
-			"ipn":                ipn,
-			"serial_number":      serialNum,
-			"defect_type":        defectType,
+			"description":        description.String,
+			"ipn":                ipn.String,
+			"serial_number":      serialNum.String,
+			"defect_type":        defectType.String,
 			"severity":           severity,
 			"status":             status,
-			"root_cause":         rootCause,
-			"corrective_action":  correctiveAction,
-			"created_at":         createdAt,
-			"resolved_at":        resolvedAt,
-			"created_by":         createdBy,
+			"root_cause":         rootCause.String,
+			"corrective_action":  correctiveAction.String,
+			"created_at":         createdAt.Time,
+			"resolved_at":        resolvedAt.Time,
+			"created_by":         createdBy.String,
 		}
 		ncrs = append(ncrs, ncr)
 	}
@@ -463,8 +467,9 @@ func searchDevices(query SearchQuery) (*SearchResult, error) {
 
 	var devices []map[string]interface{}
 	for rows.Next() {
-		var serialNum, ipn, fwVersion, customer, location, status, installDate, notes string
-		var lastSeen, createdAt *time.Time
+		var serialNum, ipn, status string
+		var fwVersion, customer, location, installDate, notes sql.NullString
+		var lastSeen, createdAt sql.NullTime
 		
 		if err := rows.Scan(&serialNum, &ipn, &fwVersion, &customer, &location,
 			&status, &installDate, &lastSeen, &notes, &createdAt); err != nil {
@@ -474,14 +479,14 @@ func searchDevices(query SearchQuery) (*SearchResult, error) {
 		device := map[string]interface{}{
 			"serial_number":    serialNum,
 			"ipn":              ipn,
-			"firmware_version": fwVersion,
-			"customer":         customer,
-			"location":         location,
+			"firmware_version": fwVersion.String,
+			"customer":         customer.String,
+			"location":         location.String,
 			"status":           status,
-			"install_date":     installDate,
-			"last_seen":        lastSeen,
-			"notes":            notes,
-			"created_at":       createdAt,
+			"install_date":     installDate.String,
+			"last_seen":        lastSeen.Time,
+			"notes":            notes.String,
+			"created_at":       createdAt.Time,
 		}
 		devices = append(devices, device)
 	}
@@ -534,9 +539,10 @@ func searchPOs(query SearchQuery) (*SearchResult, error) {
 
 	var pos []map[string]interface{}
 	for rows.Next() {
-		var id, vendorID, status, notes, expectedDate, createdBy string
-		var total float64
-		var createdAt, receivedAt *time.Time
+		var id, status string
+		var vendorID, notes, expectedDate, createdBy sql.NullString
+		var total sql.NullFloat64
+		var createdAt, receivedAt sql.NullTime
 		
 		if err := rows.Scan(&id, &vendorID, &status, &notes, &createdAt, &expectedDate,
 			&receivedAt, &createdBy, &total); err != nil {
@@ -545,14 +551,14 @@ func searchPOs(query SearchQuery) (*SearchResult, error) {
 		
 		po := map[string]interface{}{
 			"id":            id,
-			"vendor_id":     vendorID,
+			"vendor_id":     vendorID.String,
 			"status":        status,
-			"notes":         notes,
-			"created_at":    createdAt,
-			"expected_date": expectedDate,
-			"received_at":   receivedAt,
-			"created_by":    createdBy,
-			"total":         total,
+			"notes":         notes.String,
+			"created_at":    createdAt.Time,
+			"expected_date": expectedDate.String,
+			"received_at":   receivedAt.Time,
+			"created_by":    createdBy.String,
+			"total":         total.Float64,
 		}
 		pos = append(pos, po)
 	}

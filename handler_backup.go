@@ -63,6 +63,17 @@ func performBackup() error {
 	filename := fmt.Sprintf("zrp-backup-%s.db", ts)
 	destPath := filepath.Join(backupDir, filename)
 
+	// If file exists, add a counter suffix
+	counter := 1
+	for {
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			break
+		}
+		filename = fmt.Sprintf("zrp-backup-%s-%d.db", ts, counter)
+		destPath = filepath.Join(backupDir, filename)
+		counter++
+	}
+
 	_, err := db.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, destPath))
 	if err != nil {
 		return fmt.Errorf("vacuum into: %w", err)

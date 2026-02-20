@@ -403,8 +403,11 @@ func TestDocRevert(t *testing.T) {
 	createTestDocument(t, "DOC-001", "Revert Test", "spec", "IPN-001", "B", "draft", "Updated content")
 
 	// Create version A
-	db.Exec(`INSERT INTO document_versions (document_id, revision, content, file_path, created_by) 
+	_, err := db.Exec(`INSERT INTO document_versions (document_id, revision, content, file_path, created_by) 
 		VALUES ('DOC-001', 'A', 'Original content', '/docs/original.pdf', 'admin')`)
+	if err != nil {
+		t.Fatalf("Failed to insert version: %v", err)
+	}
 
 	req := httptest.NewRequest("POST", "/api/v1/docs/DOC-001/revert/A", nil)
 	w := httptest.NewRecorder()

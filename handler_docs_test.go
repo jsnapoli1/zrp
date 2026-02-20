@@ -450,11 +450,12 @@ func TestHandleUpdateDoc_PreservesStatus(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var apiResp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
+	result := apiResp.Data.(map[string]interface{})
 	if result["status"].(string) != "approved" {
 		t.Errorf("Expected status to remain 'approved', got %s", result["status"])
 	}
@@ -481,11 +482,12 @@ func TestHandleApproveDoc_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var apiResp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
+	result := apiResp.Data.(map[string]interface{})
 	if result["status"].(string) != "approved" {
 		t.Errorf("Expected status 'approved', got %s", result["status"])
 	}

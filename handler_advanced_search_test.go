@@ -370,20 +370,16 @@ func TestHandleAdvancedSearch_WorkOrders(t *testing.T) {
 
 			handleAdvancedSearch(w, req)
 
+			// Wait for any goroutines (like logSearchHistory) to complete
+			time.Sleep(50 * time.Millisecond)
+
 			if w.Code != http.StatusOK {
 				t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 			}
 
-			var apiResp APIResponse
-			if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
-				t.Fatalf("Failed to decode response: %v", err)
-			}
-
-			// Extract SearchResult from APIResponse.Data
-			resultBytes, _ := json.Marshal(apiResp.Data)
 			var result SearchResult
-			if err := json.Unmarshal(resultBytes, &result); err != nil {
-				t.Fatalf("Failed to unmarshal search result: %v", err)
+			if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
 			}
 
 			if result.Total != tt.expectedCount {
@@ -433,15 +429,9 @@ func TestHandleAdvancedSearch_ECOs(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var apiResp APIResponse
-	if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	resultBytes, _ := json.Marshal(apiResp.Data)
 	var result SearchResult
-	if err := json.Unmarshal(resultBytes, &result); err != nil {
-		t.Fatalf("Failed to unmarshal search result: %v", err)
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
 	}
 
 	if result.Total != 1 {
@@ -479,15 +469,9 @@ func TestHandleAdvancedSearch_Inventory(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var apiResp APIResponse
-	if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	resultBytes, _ := json.Marshal(apiResp.Data)
 	var result SearchResult
-	if err := json.Unmarshal(resultBytes, &result); err != nil {
-		t.Fatalf("Failed to unmarshal search result: %v", err)
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
 	}
 
 	if result.Total != 2 {
@@ -539,15 +523,16 @@ func TestHandleAdvancedSearch_Pagination(t *testing.T) {
 
 			handleAdvancedSearch(w, req)
 
-			var apiResp APIResponse
-			if err := json.NewDecoder(w.Body).Decode(&apiResp); err != nil {
-				t.Fatalf("Failed to decode response: %v", err)
+			// Wait for any goroutines (like logSearchHistory) to complete
+			time.Sleep(50 * time.Millisecond)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 			}
 
-			resultBytes, _ := json.Marshal(apiResp.Data)
 			var result SearchResult
-			if err := json.Unmarshal(resultBytes, &result); err != nil {
-				t.Fatalf("Failed to unmarshal search result: %v", err)
+			if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
 			}
 
 			if result.Page != tt.expectedPage {
@@ -946,6 +931,9 @@ func TestHandleAdvancedSearch_DevicesAndNCRsAndPOs(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			handleAdvancedSearch(w, req)
+
+			// Wait for any goroutines (like logSearchHistory) to complete
+			time.Sleep(50 * time.Millisecond)
 
 			if w.Code != http.StatusOK {
 				t.Errorf("Expected status 200, got %d", w.Code)

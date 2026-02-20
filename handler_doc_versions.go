@@ -63,7 +63,7 @@ func handleListDocVersions(w http.ResponseWriter, r *http.Request, docID string)
 func handleGetDocVersion(w http.ResponseWriter, r *http.Request, docID, revision string) {
 	var v DocumentVersion
 	var ecoID string
-	err := db.QueryRow("SELECT id, document_id, revision, content, file_path, change_summary, status, created_by, created_at, COALESCE(eco_id,'') FROM document_versions WHERE document_id=? AND revision=? ORDER BY id DESC LIMIT 1", docID, revision).
+	err := db.QueryRow("SELECT id, document_id, revision, COALESCE(content,''), COALESCE(file_path,''), COALESCE(change_summary,''), COALESCE(status,''), COALESCE(created_by,''), created_at, COALESCE(eco_id,'') FROM document_versions WHERE document_id=? AND revision=? ORDER BY id DESC LIMIT 1", docID, revision).
 		Scan(&v.ID, &v.DocumentID, &v.Revision, &v.Content, &v.FilePath, &v.ChangeSummary, &v.Status, &v.CreatedBy, &v.CreatedAt, &ecoID)
 	if err != nil {
 		jsonErr(w, "version not found", 404)
@@ -189,7 +189,7 @@ func handleReleaseDoc(w http.ResponseWriter, r *http.Request, docID string) {
 func handleRevertDoc(w http.ResponseWriter, r *http.Request, docID, revision string) {
 	var v DocumentVersion
 	var ecoID string
-	err := db.QueryRow("SELECT id, document_id, revision, content, file_path, change_summary, status, created_by, created_at, COALESCE(eco_id,'') FROM document_versions WHERE document_id=? AND revision=? ORDER BY id DESC LIMIT 1", docID, revision).
+	err := db.QueryRow("SELECT id, document_id, revision, COALESCE(content,''), COALESCE(file_path,''), COALESCE(change_summary,''), COALESCE(status,''), COALESCE(created_by,''), created_at, COALESCE(eco_id,'') FROM document_versions WHERE document_id=? AND revision=? ORDER BY id DESC LIMIT 1", docID, revision).
 		Scan(&v.ID, &v.DocumentID, &v.Revision, &v.Content, &v.FilePath, &v.ChangeSummary, &v.Status, &v.CreatedBy, &v.CreatedAt, &ecoID)
 	if err != nil {
 		jsonErr(w, "version not found", 404)
