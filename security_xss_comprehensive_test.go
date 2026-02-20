@@ -123,6 +123,15 @@ func setupComprehensiveXSSTestDB(t *testing.T) (*sql.DB, string) {
 			content TEXT,
 			category TEXT
 		);
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+			username TEXT,
+			action TEXT,
+			table_name TEXT,
+			record_id TEXT,
+			details TEXT
+		);
 	`
 
 	if _, err := testDB.Exec(schema); err != nil {
