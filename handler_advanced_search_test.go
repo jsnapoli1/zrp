@@ -607,9 +607,15 @@ func TestHandleSaveSavedSearch(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result SavedSearch
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	resultData, _ := json.Marshal(resp.Data)
+	var result SavedSearch
+	if err := json.Unmarshal(resultData, &result); err != nil {
+		t.Fatalf("Failed to unmarshal result: %v", err)
 	}
 
 	if result.ID == "" {
@@ -684,9 +690,15 @@ func TestHandleGetSavedSearches(t *testing.T) {
 				t.Errorf("Expected status 200, got %d", w.Code)
 			}
 
-			var searches []SavedSearch
-			if err := json.NewDecoder(w.Body).Decode(&searches); err != nil {
+			var resp APIResponse
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
+			}
+			
+			searchesData, _ := json.Marshal(resp.Data)
+			var searches []SavedSearch
+			if err := json.Unmarshal(searchesData, &searches); err != nil {
+				t.Fatalf("Failed to unmarshal searches: %v", err)
 			}
 
 			if len(searches) != tt.expectedCount {
@@ -752,9 +764,15 @@ func TestHandleGetQuickFilters(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var filters []QuickFilter
-	if err := json.NewDecoder(w.Body).Decode(&filters); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	filtersData, _ := json.Marshal(resp.Data)
+	var filters []QuickFilter
+	if err := json.Unmarshal(filtersData, &filters); err != nil {
+		t.Fatalf("Failed to unmarshal filters: %v", err)
 	}
 
 	// Should return at least some quick filters
@@ -821,9 +839,15 @@ func TestHandleGetSearchHistory(t *testing.T) {
 				t.Errorf("Expected status 200, got %d", w.Code)
 			}
 
-			var history []interface{}
-			if err := json.NewDecoder(w.Body).Decode(&history); err != nil {
+			var resp APIResponse
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
+			}
+			
+			historyData, _ := json.Marshal(resp.Data)
+			var history []interface{}
+			if err := json.Unmarshal(historyData, &history); err != nil {
+				t.Fatalf("Failed to unmarshal history: %v", err)
 			}
 
 			if len(history) != tt.expectedCount {
