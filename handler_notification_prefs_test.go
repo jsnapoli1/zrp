@@ -1,17 +1,12 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
-
-func withUserID(r *http.Request, userID int) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), ctxUserID, userID))
-}
 
 func decodeAPIResp(t *testing.T, w *httptest.ResponseRecorder, target interface{}) {
 	t.Helper()

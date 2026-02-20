@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -97,7 +96,7 @@ func TestRecordChangeCreate(t *testing.T) {
 
 	newData := `{"id":"V-001","name":"Test Vendor","status":"active"}`
 	id, err := recordChange("admin", "vendors", "V-001", "create", "", newData)
-	
+
 	if err != nil {
 		t.Fatalf("recordChange failed: %v", err)
 	}
@@ -114,6 +113,3 @@ func TestRecordChangeCreate(t *testing.T) {
 }
 
 // Helper functions
-func stringReader(s string) *strings.Reader {
-	return strings.NewReader(s)
-}

@@ -16,8 +16,9 @@ import (
 type contextKey string
 
 const (
-	ctxUserID contextKey = "userID"
-	ctxRole   contextKey = "role"
+	ctxUserID   contextKey = "userID"
+	ctxUsername contextKey = "username"
+	ctxRole     contextKey = "role"
 )
 
 // gzipResponseWriter wraps http.ResponseWriter to support gzip compression

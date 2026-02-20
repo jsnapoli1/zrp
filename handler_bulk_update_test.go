@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -138,7 +136,7 @@ func TestBulkUpdateInventoryLocation(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 200 {
@@ -173,7 +171,7 @@ func TestBulkUpdateInventoryReorderPoint(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 200 {
@@ -201,7 +199,7 @@ func TestBulkUpdateInventoryDisallowedField(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 400 {
@@ -217,7 +215,7 @@ func TestBulkUpdateInventoryEmptyIDs(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 400 {
@@ -235,7 +233,7 @@ func TestBulkUpdateInventoryEmptyUpdates(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 400 {
@@ -253,7 +251,7 @@ func TestBulkUpdateInventoryNotFound(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 200 {
@@ -279,14 +277,14 @@ func TestBulkUpdateWorkOrdersStatus(t *testing.T) {
 	year := fmt.Sprintf("%d", time.Now().Year())
 	id1 := fmt.Sprintf("WO-%s-001", year)
 	id2 := fmt.Sprintf("WO-%s-002", year)
-	
+
 	db.Exec("INSERT INTO work_orders (id, status) VALUES (?, 'draft'), (?, 'open')", id1, id2)
 
 	body := fmt.Sprintf(`{"ids":["%s","%s"],"updates":{"status":"completed"}}`, id1, id2)
 	req := httptest.NewRequest("POST", "/api/v1/workorders/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateWorkOrders(w, req)
 
 	if w.Code != 200 {
@@ -308,14 +306,14 @@ func TestBulkUpdateWorkOrdersPriority(t *testing.T) {
 
 	year := fmt.Sprintf("%d", time.Now().Year())
 	id := fmt.Sprintf("WO-%s-001", year)
-	
+
 	db.Exec("INSERT INTO work_orders (id, priority) VALUES (?, 'normal')", id)
 
 	body := fmt.Sprintf(`{"ids":["%s"],"updates":{"priority":"critical"}}`, id)
 	req := httptest.NewRequest("POST", "/api/v1/workorders/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateWorkOrders(w, req)
 
 	if w.Code != 200 {
@@ -342,7 +340,7 @@ func TestBulkUpdateWorkOrdersInvalidStatus(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/workorders/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateWorkOrders(w, req)
 
 	if w.Code != 400 {
@@ -362,7 +360,7 @@ func TestBulkUpdateWorkOrdersInvalidPriority(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/workorders/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateWorkOrders(w, req)
 
 	if w.Code != 400 {
@@ -382,7 +380,7 @@ func TestBulkUpdateWorkOrdersDisallowedField(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/workorders/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateWorkOrders(w, req)
 
 	if w.Code != 400 {
@@ -400,7 +398,7 @@ func TestBulkUpdateDevicesStatus(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/devices/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateDevices(w, req)
 
 	if w.Code != 200 {
@@ -426,7 +424,7 @@ func TestBulkUpdateDevicesCustomerAndLocation(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/devices/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateDevices(w, req)
 
 	if w.Code != 200 {
@@ -454,7 +452,7 @@ func TestBulkUpdateDevicesInvalidStatus(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/devices/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateDevices(w, req)
 
 	if w.Code != 400 {
@@ -472,7 +470,7 @@ func TestBulkUpdateDevicesDisallowedField(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/devices/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateDevices(w, req)
 
 	if w.Code != 400 {
@@ -490,7 +488,7 @@ func TestBulkUpdatePartsCategory(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/parts/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateParts(w, req)
 
 	if w.Code != 200 {
@@ -516,7 +514,7 @@ func TestBulkUpdatePartsLifecycle(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/parts/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateParts(w, req)
 
 	if w.Code != 200 {
@@ -544,7 +542,7 @@ func TestBulkUpdatePartsMinStock(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/parts/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateParts(w, req)
 
 	if w.Code != 200 {
@@ -569,7 +567,7 @@ func TestBulkUpdatePartsDisallowedField(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/parts/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateParts(w, req)
 
 	if w.Code != 400 {
@@ -587,7 +585,7 @@ func TestBulkUpdateECOsStatus(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/ecos/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateECOs(w, req)
 
 	if w.Code != 200 {
@@ -613,7 +611,7 @@ func TestBulkUpdateECOsPriority(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/ecos/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateECOs(w, req)
 
 	if w.Code != 200 {
@@ -638,7 +636,7 @@ func TestBulkUpdateECOsInvalidStatus(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/ecos/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateECOs(w, req)
 
 	if w.Code != 400 {
@@ -656,7 +654,7 @@ func TestBulkUpdateECOsDisallowedField(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/ecos/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateECOs(w, req)
 
 	if w.Code != 400 {
@@ -674,7 +672,7 @@ func TestBulkUpdateAuditLogging(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	// Verify audit log entry was created
@@ -697,7 +695,7 @@ func TestBulkUpdatePartialFailure(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	if w.Code != 200 {
@@ -733,7 +731,7 @@ func TestBulkUpdateTransactionSafety(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	var resp APIResponse
@@ -756,7 +754,7 @@ func TestBulkUpdateTimestamps(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/inventory/bulk-update", strings.NewReader(body))
 	req = withUsername(req, "admin")
 	w := httptest.NewRecorder()
-	
+
 	handleBulkUpdateInventory(w, req)
 
 	var updatedAt string
@@ -771,8 +769,3 @@ func TestBulkUpdateTimestamps(t *testing.T) {
 // Helper functions
 // Note: contextKey type is defined in middleware.go
 const ctxUsernameBulk contextKey = "username"
-
-func withUsername(req *http.Request, username string) *http.Request {
-	ctx := context.WithValue(req.Context(), ctxUsernameBulk, username)
-	return req.WithContext(ctx)
-}
