@@ -245,7 +245,18 @@ func emailConfigEnabled() bool {
 }
 
 func isValidEmail(email string) bool {
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
+	if !strings.Contains(email, "@") {
+		return false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	local, domain := parts[0], parts[1]
+	if local == "" || domain == "" {
+		return false
+	}
+	return strings.Contains(domain, ".")
 }
 
 // --- Subscription management ---

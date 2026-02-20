@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"net/smtp"
 	"strings"
@@ -21,6 +22,36 @@ func setupEmailTestDB(t *testing.T) *sql.DB {
 
 	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		t.Fatalf("Failed to enable foreign keys: %v", err)
+	}
+
+	// Create users table (needed for session-based tests)
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			display_name TEXT,
+			role TEXT DEFAULT 'user',
+			active INTEGER DEFAULT 1,
+			last_login TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create users table: %v", err)
+	}
+
+	// Create sessions table (needed for session-based tests)
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			token TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL,
+			expires_at TIMESTAMP NOT NULL,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create sessions table: %v", err)
 	}
 
 	// Create email_config table
@@ -127,9 +158,15 @@ func TestHandleGetEmailConfig_Default(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var config EmailConfig
-	if err := json.NewDecoder(w.Body).Decode(&config); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	configData, _ := json.Marshal(resp.Data)
+	var config EmailConfig
+	if err := json.Unmarshal(configData, &config); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
 	}
 
 	// Should return defaults when no config exists
@@ -166,9 +203,15 @@ func TestHandleGetEmailConfig_Existing(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var config EmailConfig
-	if err := json.NewDecoder(w.Body).Decode(&config); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	configData, _ := json.Marshal(resp.Data)
+	var config EmailConfig
+	if err := json.Unmarshal(configData, &config); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
 	}
 
 	if config.SMTPHost != "smtp.example.com" {
@@ -227,8 +270,11 @@ func TestHandleUpdateEmailConfig_New(t *testing.T) {
 	}
 
 	// Response should mask password
+	var apiResp APIResponse
+	json.NewDecoder(w.Body).Decode(&apiResp)
+	respData, _ := json.Marshal(apiResp.Data)
 	var resp EmailConfig
-	json.NewDecoder(w.Body).Decode(&resp)
+	json.Unmarshal(respData, &resp)
 	if resp.SMTPPassword != "****" {
 		t.Errorf("Response password should be masked, got '%s'", resp.SMTPPassword)
 	}
@@ -366,8 +412,11 @@ func TestHandleTestEmail_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
+	var apiResp APIResponse
+	json.NewDecoder(w.Body).Decode(&apiResp)
+	respData, _ := json.Marshal(apiResp.Data)
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	json.Unmarshal(respData, &resp)
 	if resp["status"] != "sent" {
 		t.Errorf("Expected status 'sent', got '%s'", resp["status"])
 	}
@@ -426,8 +475,11 @@ func TestHandleTestEmail_TestEmailField(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
+	var apiResp APIResponse
+	json.NewDecoder(w.Body).Decode(&apiResp)
+	respData, _ := json.Marshal(apiResp.Data)
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	json.Unmarshal(respData, &resp)
 	if resp["to"] != "alternate@test.com" {
 		t.Errorf("Should support 'test_email' field, got '%s'", resp["to"])
 	}
@@ -492,17 +544,17 @@ func TestHandleListEmailLog(t *testing.T) {
 	db = setupEmailTestDB(t)
 	defer db.Close()
 
-	// Insert test log entries
-	_, err := db.Exec(`INSERT INTO email_log (to_address, subject, body, event_type, status, error) 
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		"user1@test.com", "Test 1", "Body 1", "test_event", "sent", "")
+	// Insert test log entries with explicit timestamps for predictable ordering
+	_, err := db.Exec(`INSERT INTO email_log (to_address, subject, body, event_type, status, error, sent_at) 
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user1@test.com", "Test 1", "Body 1", "test_event", "sent", "", "2026-01-01 10:00:00")
 	if err != nil {
 		t.Fatalf("Failed to insert log entry: %v", err)
 	}
 
-	_, err = db.Exec(`INSERT INTO email_log (to_address, subject, body, event_type, status, error) 
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		"user2@test.com", "Test 2", "Body 2", "eco_approved", "failed", "Connection timeout")
+	_, err = db.Exec(`INSERT INTO email_log (to_address, subject, body, event_type, status, error, sent_at) 
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user2@test.com", "Test 2", "Body 2", "eco_approved", "failed", "Connection timeout", "2026-01-01 11:00:00")
 	if err != nil {
 		t.Fatalf("Failed to insert log entry: %v", err)
 	}
@@ -516,9 +568,15 @@ func TestHandleListEmailLog(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var logs []EmailLogEntry
-	if err := json.NewDecoder(w.Body).Decode(&logs); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	logsData, _ := json.Marshal(resp.Data)
+	var logs []EmailLogEntry
+	if err := json.Unmarshal(logsData, &logs); err != nil {
+		t.Fatalf("Failed to unmarshal logs: %v", err)
 	}
 
 	if len(logs) != 2 {
@@ -552,9 +610,15 @@ func TestHandleListEmailLog_Empty(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var logs []EmailLogEntry
-	if err := json.NewDecoder(w.Body).Decode(&logs); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	logsData, _ := json.Marshal(resp.Data)
+	var logs []EmailLogEntry
+	if err := json.Unmarshal(logsData, &logs); err != nil {
+		t.Fatalf("Failed to unmarshal logs: %v", err)
 	}
 
 	if len(logs) != 0 {
@@ -640,9 +704,15 @@ func TestHandleGetEmailSubscriptions_Default(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var subs map[string]bool
-	if err := json.NewDecoder(w.Body).Decode(&subs); err != nil {
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
+	}
+	
+	subsData, _ := json.Marshal(resp.Data)
+	var subs map[string]bool
+	if err := json.Unmarshal(subsData, &subs); err != nil {
+		t.Fatalf("Failed to unmarshal subscriptions: %v", err)
 	}
 
 	// All event types should default to enabled
@@ -659,6 +729,9 @@ func TestHandleGetEmailSubscriptions_Custom(t *testing.T) {
 	db = setupEmailTestDB(t)
 	defer db.Close()
 
+	// Create user and session
+	cookie := loginUser(t, db, "testuser")
+
 	// Insert custom subscription (disable low_stock for testuser)
 	_, err := db.Exec(`INSERT INTO email_subscriptions (user_id, event_type, enabled) VALUES (?, ?, ?)`,
 		"testuser", "low_stock", 0)
@@ -667,12 +740,16 @@ func TestHandleGetEmailSubscriptions_Custom(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/api/email/subscriptions", nil)
+	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w := httptest.NewRecorder()
 
 	handleGetEmailSubscriptions(w, req)
 
+	var resp APIResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	subsData, _ := json.Marshal(resp.Data)
 	var subs map[string]bool
-	json.NewDecoder(w.Body).Decode(&subs)
+	json.Unmarshal(subsData, &subs)
 
 	if subs["low_stock"] {
 		t.Error("low_stock should be disabled for testuser")
@@ -688,6 +765,9 @@ func TestHandleUpdateEmailSubscriptions(t *testing.T) {
 	db = setupEmailTestDB(t)
 	defer db.Close()
 
+	// Create user and session
+	cookie := loginUser(t, db, "testuser")
+
 	reqBody := `{
 		"eco_approved": false,
 		"low_stock": true,
@@ -695,6 +775,7 @@ func TestHandleUpdateEmailSubscriptions(t *testing.T) {
 	}`
 	req := httptest.NewRequest("POST", "/api/email/subscriptions", bytes.NewBufferString(reqBody))
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "zrp_session", Value: cookie})
 	w := httptest.NewRecorder()
 
 	handleUpdateEmailSubscriptions(w, req)
