@@ -268,9 +268,6 @@ func handleGeneratePOSuggestions(w http.ResponseWriter, r *http.Request) {
 		if err == nil && onHand.Valid {
 			req.OnHand = onHand.Float64
 		}
-		// Debug logging (will be visible in test output)
-		fmt.Printf("[DEBUG] IPN=%s, Required=%.0f, OnHand=%.0f, err=%v, valid=%v\n", 
-			req.IPN, req.Required, req.OnHand, err, onHand.Valid)
 
 		req.Shortage = req.Required - req.OnHand
 		if req.Shortage > 0 {
@@ -441,7 +438,7 @@ func handleReviewPOSuggestion(w http.ResponseWriter, r *http.Request, suggestion
 
 		// Copy suggestion lines to PO lines
 		rows, err := db.Query(`
-			SELECT ipn, mpn, manufacturer, qty_needed, estimated_unit_price, notes
+			SELECT ipn, COALESCE(mpn, ''), COALESCE(manufacturer, ''), qty_needed, estimated_unit_price, COALESCE(notes, '')
 			FROM po_suggestion_lines
 			WHERE suggestion_id = ?
 		`, suggestionID)
@@ -456,6 +453,11 @@ func handleReviewPOSuggestion(w http.ResponseWriter, r *http.Request, suggestion
 			var ipn, mpn, manufacturer, notes string
 			var qtyNeeded, unitPrice float64
 			rows.Scan(&ipn, &mpn, &manufacturer, &qtyNeeded, &unitPrice, &notes)
+
+			// Skip lines with zero or negative quantity
+			if qtyNeeded <= 0 {
+				continue
+			}
 
 			_, err = db.Exec(`
 				INSERT INTO po_lines (po_id, ipn, mpn, manufacturer, qty_ordered, unit_price, notes)
