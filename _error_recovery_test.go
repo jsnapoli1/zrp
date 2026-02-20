@@ -75,6 +75,16 @@ func setupErrorTestDB(t *testing.T) *sql.DB {
 			active INTEGER DEFAULT 1,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
+
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+			username TEXT,
+			action TEXT,
+			table_name TEXT,
+			record_id TEXT,
+			details TEXT
+		);
 	`
 
 	if _, err := testDB.Exec(schema); err != nil {
