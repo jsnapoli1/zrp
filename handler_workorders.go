@@ -139,7 +139,7 @@ func handleUpdateWorkOrder(w http.ResponseWriter, r *http.Request, id string) {
 	}
 
 	// Handle inventory integration on completion
-	if wo.Status == "complete" && currentWO.Status != "complete" {
+	if wo.Status == "completed" && currentWO.Status != "completed" {
 		err = handleWorkOrderCompletion(tx, id, wo.AssemblyIPN, wo.Qty, getUsername(r))
 		if err != nil {
 			jsonErr(w, "failed to update inventory on completion: "+err.Error(), 500)
@@ -173,9 +173,9 @@ func isValidStatusTransition(from, to string) bool {
 	validTransitions := map[string][]string{
 		"draft":       {"open", "cancelled"},
 		"open":        {"in_progress", "on_hold", "cancelled"},
-		"in_progress": {"complete", "on_hold", "cancelled"},
+		"in_progress": {"completed", "on_hold", "cancelled"},
 		"on_hold":     {"in_progress", "open", "cancelled"},
-		"complete":    {}, // Terminal state
+		"completed":   {}, // Terminal state
 		"cancelled":   {}, // Terminal state
 	}
 	
@@ -231,11 +231,11 @@ func handleWorkOrderCompletion(tx *sql.Tx, woID, assemblyIPN string, qty int, us
 			continue
 		}
 		
-		// Consume the reserved quantity (already calculated during kitting)
-		// The reserved amount represents the total needed for this WO
+		// Consume the reserved quantity multiplied by work order qty
+		// The reserved amount is per-unit, so multiply by qty to get total consumed
 		// TODO: Track which inventory is reserved for which WO to avoid consuming
 		// inventory reserved for other WOs
-		consumed := reserved
+		consumed := reserved * float64(qty)
 		
 		// Deduct from on_hand and release reservation
 		_, err = tx.Exec("UPDATE inventory SET qty_on_hand = qty_on_hand - ?, qty_reserved = qty_reserved - ?, updated_at = ? WHERE ipn = ?",
@@ -504,9 +504,9 @@ func handleWorkOrderKit(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	// Don't allow kitting if already complete or cancelled
-	if status == "complete" || status == "cancelled" {
-		jsonErr(w, "cannot kit materials for complete or cancelled work order", 400)
+	// Don't allow kitting if already completed or cancelled
+	if status == "completed" || status == "cancelled" {
+		jsonErr(w, "cannot kit materials for completed or cancelled work order", 400)
 		return
 	}
 
@@ -658,9 +658,9 @@ func handleWorkOrderAddSerial(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 
-	// Don't allow adding serials to complete or cancelled WOs
-	if woStatus == "complete" || woStatus == "cancelled" {
-		jsonErr(w, "cannot add serials to complete or cancelled work order", 400)
+	// Don't allow adding serials to completed or cancelled WOs
+	if woStatus == "completed" || woStatus == "cancelled" {
+		jsonErr(w, "cannot add serials to completed or cancelled work order", 400)
 		return
 	}
 

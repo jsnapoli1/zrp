@@ -320,7 +320,7 @@ func TestIntegration_ECO_Part_Update_BOM_Impact(t *testing.T) {
 		"title":          "Replace " + oldPartIPN + " with " + newPartIPN,
 		"description":    "Integration test ECO: Part replacement due to obsolescence",
 		"status":         "draft",
-		"priority":       "medium",
+		"priority":       "normal",
 		"affected_ipns":  assemblyIPN,
 	}
 	

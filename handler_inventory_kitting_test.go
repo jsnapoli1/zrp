@@ -173,7 +173,7 @@ func TestWorkOrderKitting_CompletionReleasesReservation(t *testing.T) {
 	updateJSON := `{
 		"assembly_ipn": "ASY-200",
 		"qty": 5,
-		"status": "complete",
+		"status": "completed",
 		"priority": "normal",
 		"notes": ""
 	}`
@@ -420,7 +420,7 @@ func TestWorkOrderKitting_SecondWOProceedsAfterFirstCompletes(t *testing.T) {
 	updateJSON := `{
 		"assembly_ipn": "ASY-500",
 		"qty": 5,
-		"status": "complete",
+		"status": "completed",
 		"priority": "normal",
 		"notes": ""
 	}`

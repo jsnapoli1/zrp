@@ -160,7 +160,7 @@ func runMigrations() error {
 		`CREATE TABLE IF NOT EXISTS work_orders (
 			id TEXT PRIMARY KEY, assembly_ipn TEXT NOT NULL,
 			qty INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
-			status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','complete','cancelled','on_hold')),
+			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','open','in_progress','completed','cancelled','on_hold')),
 			priority TEXT DEFAULT 'normal' CHECK(priority IN ('low','normal','high','critical')),
 			notes TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

@@ -529,7 +529,7 @@ func testDashboardLargeData(t *testing.T) {
 		t.Fatalf("Failed to prepare WO statement: %v", err)
 	}
 
-	woStatuses := []string{"open", "in_progress", "complete"}
+	woStatuses := []string{"open", "in_progress", "completed"}
 	for i := 0; i < numWOs; i++ {
 		woID := fmt.Sprintf("WO-DASH-%06d", i)
 		assemblyIPN := fmt.Sprintf("ASSEMBLY-%03d", i%100)
@@ -631,7 +631,7 @@ func testDashboardLargeData(t *testing.T) {
 		db.QueryRow("SELECT COUNT(*), SUM(total) FROM purchase_orders WHERE status != 'received'").Scan(&poCount, &poTotal)
 
 		var woCount int
-		db.QueryRow("SELECT COUNT(*) FROM work_orders WHERE status != 'complete'").Scan(&woCount)
+		db.QueryRow("SELECT COUNT(*) FROM work_orders WHERE status != 'completed'").Scan(&woCount)
 
 		// Build response
 		response := map[string]interface{}{

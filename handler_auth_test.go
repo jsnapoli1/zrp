@@ -41,12 +41,14 @@ func setupAuthTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to create users table: %v", err)
 	}
 
-	// Create sessions table
+	// Create sessions table (match production schema)
 	_, err = testDB.Exec(`
 		CREATE TABLE sessions (
 			token TEXT PRIMARY KEY,
 			user_id INTEGER NOT NULL,
-			expires_at TIMESTAMP NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expires_at DATETIME NOT NULL,
+			last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)
 	`)

@@ -69,6 +69,13 @@ func handleSetPermissions(w http.ResponseWriter, r *http.Request, role string) {
 		return
 	}
 
+	// SECURITY: Only admins can modify permissions
+	callerRole, _ := r.Context().Value(ctxRole).(string)
+	if callerRole != "admin" {
+		jsonErr(w, "Forbidden: Only admins can modify permissions", 403)
+		return
+	}
+
 	var req struct {
 		Permissions []struct {
 			Module string `json:"module"`

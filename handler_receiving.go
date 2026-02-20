@@ -83,16 +83,20 @@ func handleInspectReceiving(w http.ResponseWriter, r *http.Request, idStr string
 		return
 	}
 
-	// Verify inspection record exists
+	// Verify inspection record exists and has NOT been inspected yet
 	var ri ReceivingInspection
 	var ia sql.NullString
 	err = db.QueryRow(`SELECT id, po_id, po_line_id, ipn, qty_received, qty_passed, qty_failed, qty_on_hold, 
 		COALESCE(inspector,''), inspected_at, COALESCE(notes,''), created_at 
-		FROM receiving_inspections WHERE id=?`, id).
+		FROM receiving_inspections WHERE id=? AND inspected_at IS NULL`, id).
 		Scan(&ri.ID, &ri.POID, &ri.POLineID, &ri.IPN, &ri.QtyReceived, &ri.QtyPassed, &ri.QtyFailed, &ri.QtyOnHold,
 			&ri.Inspector, &ia, &ri.Notes, &ri.CreatedAt)
 	if err != nil {
-		jsonErr(w, "inspection record not found", 404)
+		if err == sql.ErrNoRows {
+			jsonErr(w, "inspection record not found or already completed", 404)
+		} else {
+			jsonErr(w, "inspection record not found", 404)
+		}
 		return
 	}
 

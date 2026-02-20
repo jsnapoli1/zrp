@@ -84,8 +84,8 @@ func setupTransactionTestDB(t *testing.T) *sql.DB {
 			qty INTEGER NOT NULL CHECK(qty > 0),
 			qty_good INTEGER,
 			qty_scrap INTEGER,
-			status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','complete','cancelled')),
-			priority TEXT DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
+			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','open','in_progress','completed','cancelled','on_hold')),
+			priority TEXT DEFAULT 'normal' CHECK(priority IN ('low','normal','high','critical')),
 			notes TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			started_at DATETIME,
@@ -311,8 +311,8 @@ func TestWorkOrderCompletionRollback(t *testing.T) {
 			}
 			defer tx.Rollback()
 
-			// Step 1: Update work order status to complete
-			_, err = tx.Exec("UPDATE work_orders SET status = 'complete', completed_at = datetime('now') WHERE id = ?", "WO001")
+			// Step 1: Update work order status to completed
+			_, err = tx.Exec("UPDATE work_orders SET status = 'completed', completed_at = datetime('now') WHERE id = ?", "WO001")
 			if err != nil {
 				t.Fatalf("Failed to update WO status: %v", err)
 			}
@@ -360,7 +360,7 @@ func TestWorkOrderCompletionRollback(t *testing.T) {
 		}
 
 		// Complete work order with proper transaction handling
-		_, err = tx.Exec("UPDATE work_orders SET status = 'complete', completed_at = datetime('now'), qty_good = ? WHERE id = ?", 10, "WO001")
+		_, err = tx.Exec("UPDATE work_orders SET status = 'completed', completed_at = datetime('now'), qty_good = ? WHERE id = ?", 10, "WO001")
 		if err != nil {
 			tx.Rollback()
 			t.Fatalf("Failed to update WO: %v", err)
@@ -406,8 +406,8 @@ func TestWorkOrderCompletionRollback(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to query WO: %v", err)
 		}
-		if status != "complete" {
-			t.Errorf("Expected WO status 'complete', got '%s'", status)
+		if status != "completed" {
+			t.Errorf("Expected WO status 'completed', got '%s'", status)
 		}
 		if !qtyGood.Valid || qtyGood.Int64 != 10 {
 			t.Errorf("Expected qty_good = 10, got %v", qtyGood)

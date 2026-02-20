@@ -525,13 +525,17 @@ func main() {
 
 		// Attachments
 		case parts[0] == "attachments" && len(parts) == 1 && r.Method == "POST":
-			handleUploadAttachment(w, r)
+			requireAuth(http.HandlerFunc(handleUploadAttachment)).ServeHTTP(w, r)
 		case parts[0] == "attachments" && len(parts) == 1 && r.Method == "GET":
-			handleListAttachments(w, r)
+			requireAuth(http.HandlerFunc(handleListAttachments)).ServeHTTP(w, r)
 		case parts[0] == "attachments" && len(parts) == 3 && parts[2] == "download" && r.Method == "GET":
-			handleDownloadAttachment(w, r, parts[1])
+			requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handleDownloadAttachment(w, r, parts[1])
+			})).ServeHTTP(w, r)
 		case parts[0] == "attachments" && len(parts) == 2 && r.Method == "DELETE":
-			handleDeleteAttachment(w, r, parts[1])
+			requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handleDeleteAttachment(w, r, parts[1])
+			})).ServeHTTP(w, r)
 
 		// Prices
 		case parts[0] == "prices" && len(parts) == 2 && parts[1] != "" && r.Method == "GET":

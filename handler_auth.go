@@ -69,8 +69,12 @@ type UserResponse struct {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-	// Rate limiting is now handled by rateLimitMiddleware
-	// Old checkLoginRateLimit removed to avoid double rate limiting
+	// Check rate limit (defense in depth - also enforced at middleware level)
+	ip := getClientIP(r)
+	if !checkLoginRateLimit(ip) {
+		jsonErr(w, "Too many login attempts. Try again in a minute.", 429)
+		return
+	}
 
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

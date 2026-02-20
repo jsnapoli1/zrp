@@ -178,7 +178,7 @@ func handleQuotePDF(w http.ResponseWriter, r *http.Request, id string) {
 		lineTotal := float64(l.Qty) * l.UnitPrice
 		total += lineTotal
 		lineRows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td style="text-align:center">%d</td><td style="text-align:right">$%.2f</td><td style="text-align:right">$%.2f</td></tr>`,
-			l.IPN, l.Description, l.Qty, l.UnitPrice, lineTotal)
+			html.EscapeString(l.IPN), html.EscapeString(l.Description), l.Qty, l.UnitPrice, lineTotal)
 	}
 	if lineRows == "" {
 		lineRows = `<tr><td colspan="5" style="text-align:center;color:#999">No line items</td></tr>`
