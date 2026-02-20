@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -369,7 +370,7 @@ func TestHandleScanLookup_SQLInjection(t *testing.T) {
 
 	for _, attempt := range sqlInjectionAttempts {
 		t.Run("SQL_Injection_"+attempt, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/scan?code="+attempt, nil)
+			req := httptest.NewRequest("GET", "/api/scan?code="+url.QueryEscape(attempt), nil)
 			w := httptest.NewRecorder()
 
 			// Should not panic or cause SQL errors
