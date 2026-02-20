@@ -271,6 +271,7 @@ func runMigrations() error {
 			user_id INTEGER NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			expires_at DATETIME NOT NULL,
+			last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS csrf_tokens (
@@ -278,6 +279,21 @@ func runMigrations() error {
 			user_id INTEGER NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			expires_at DATETIME NOT NULL,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS password_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			password_hash TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+			token TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expires_at DATETIME NOT NULL,
+			used INTEGER DEFAULT 0,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS audit_log (
@@ -620,6 +636,9 @@ func runMigrations() error {
 		"ALTER TABLE work_orders ADD COLUMN qty_good INTEGER DEFAULT 0",
 		"ALTER TABLE work_orders ADD COLUMN qty_scrap INTEGER DEFAULT 0",
 		"ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0",
+		"ALTER TABLE users ADD COLUMN locked_until DATETIME DEFAULT NULL",
+		"ALTER TABLE sessions ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP",
 		"ALTER TABLE email_log ADD COLUMN event_type TEXT DEFAULT ''",
 		"ALTER TABLE email_log ADD COLUMN recipient TEXT DEFAULT ''",
 		"ALTER TABLE purchase_orders ADD COLUMN created_by TEXT DEFAULT ''",

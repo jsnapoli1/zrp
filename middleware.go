@@ -149,8 +149,9 @@ func requireAuth(next http.Handler) http.Handler {
 		var userID int
 		var role string
 		var active int
-		err = db.QueryRow(`SELECT s.user_id, u.role, u.active FROM sessions s JOIN users u ON s.user_id = u.id
-			WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP`, cookie.Value).Scan(&userID, &role, &active)
+		var lastActivity string
+		err = db.QueryRow(`SELECT s.user_id, u.role, u.active, COALESCE(s.last_activity, s.created_at) FROM sessions s JOIN users u ON s.user_id = u.id
+			WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP`, cookie.Value).Scan(&userID, &role, &active, &lastActivity)
 		if err != nil {
 			if !strings.HasPrefix(path, "/api/") {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -162,6 +163,26 @@ func requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		// Check for inactivity timeout (30 minutes)
+		if lastActivity != "" {
+			lastActivityTime, err := time.Parse("2006-01-02 15:04:05", lastActivity)
+			if err == nil {
+				inactivityPeriod := time.Since(lastActivityTime)
+				if inactivityPeriod > 30*time.Minute {
+					// Session has been inactive too long - invalidate it
+					db.Exec("DELETE FROM sessions WHERE token = ?", cookie.Value)
+					if !strings.HasPrefix(path, "/api/") {
+						http.Redirect(w, r, "/login", http.StatusSeeOther)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(401)
+					json.NewEncoder(w).Encode(map[string]string{"error": "Session expired due to inactivity", "code": "SESSION_TIMEOUT"})
+					return
+				}
+			}
+		}
+
 		if active == 0 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(403)
@@ -170,9 +191,9 @@ func requireAuth(next http.Handler) http.Handler {
 		}
 
 		// Sliding window: extend session expiry on each authenticated request
-		newExpiry := time.Now().Add(24 * time.Hour)
-		db.Exec("UPDATE sessions SET expires_at = ? WHERE token = ?",
-			newExpiry.Format("2006-01-02 15:04:05"), cookie.Value)
+		newExpiry := time.Now().UTC().Add(24 * time.Hour)
+		db.Exec("UPDATE sessions SET expires_at = ?, last_activity = ? WHERE token = ?",
+			newExpiry.Format("2006-01-02 15:04:05"), time.Now().UTC().Format("2006-01-02 15:04:05"), cookie.Value)
 
 		// Update cookie expiry to match
 		http.SetCookie(w, &http.Cookie{

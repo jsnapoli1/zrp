@@ -186,16 +186,51 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 
 	var id int
 	var username, displayName, role string
-	err = db.QueryRow(`SELECT u.id, u.username, u.display_name, u.role 
+	var lastActivity string
+	err = db.QueryRow(`SELECT u.id, u.username, u.display_name, u.role, COALESCE(s.last_activity, s.created_at)
 		FROM sessions s JOIN users u ON s.user_id = u.id 
 		WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP`, cookie.Value).
-		Scan(&id, &username, &displayName, &role)
+		Scan(&id, &username, &displayName, &role, &lastActivity)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(401)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized", "code": "UNAUTHORIZED"})
 		return
 	}
+
+	// Check for inactivity timeout (30 minutes)
+	if lastActivity != "" {
+		// Try multiple time formats (SQLite can store in different formats)
+		var lastActivityTime time.Time
+		var parseErr error
+		formats := []string{
+			"2006-01-02 15:04:05",
+			time.RFC3339,
+			"2006-01-02T15:04:05Z",
+		}
+		for _, format := range formats {
+			lastActivityTime, parseErr = time.Parse(format, lastActivity)
+			if parseErr == nil {
+				break
+			}
+		}
+		
+		if parseErr == nil {
+			inactivityPeriod := time.Since(lastActivityTime)
+			if inactivityPeriod > 30*time.Minute {
+				// Session has been inactive too long - invalidate it
+				db.Exec("DELETE FROM sessions WHERE token = ?", cookie.Value)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(401)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Session expired due to inactivity", "code": "SESSION_TIMEOUT"})
+				return
+			}
+		}
+	}
+
+	// Update last_activity on this request (use UTC for consistency with SQLite)
+	db.Exec("UPDATE sessions SET last_activity = ? WHERE token = ?",
+		time.Now().UTC().Format("2006-01-02 15:04:05"), cookie.Value)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
