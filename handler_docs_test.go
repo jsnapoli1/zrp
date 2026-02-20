@@ -259,10 +259,13 @@ func TestHandleCreateDoc_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result Document
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp struct {
+		Data Document `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
+	result := resp.Data
 
 	if result.Title != "New Test Document" {
 		t.Errorf("Expected 'New Test Document', got %s", result.Title)
@@ -338,10 +341,13 @@ func TestHandleCreateDoc_DefaultValues(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result Document
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp struct {
+		Data Document `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
+	result := resp.Data
 
 	if result.Revision != "A" {
 		t.Errorf("Expected default revision 'A', got %s", result.Revision)
@@ -385,10 +391,13 @@ func TestHandleUpdateDoc_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
+	result := resp.Data
 
 	if result["title"].(string) != "Updated Title" {
 		t.Errorf("Expected 'Updated Title', got %s", result["title"])
