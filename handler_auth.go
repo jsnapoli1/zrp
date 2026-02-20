@@ -69,10 +69,8 @@ type UserResponse struct {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !checkLoginRateLimit(getClientIP(r)) {
-		jsonErr(w, "Too many login attempts. Try again in a minute.", 429)
-		return
-	}
+	// Rate limiting is now handled by rateLimitMiddleware
+	// Old checkLoginRateLimit removed to avoid double rate limiting
 
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -80,10 +78,17 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if account is locked
+	locked, err := IsAccountLocked(req.Username)
+	if err == nil && locked {
+		jsonErr(w, "Account temporarily locked due to too many failed login attempts. Try again later.", 403)
+		return
+	}
+
 	var id int
 	var passwordHash, displayName, role string
 	var active int
-	err := db.QueryRow("SELECT id, password_hash, display_name, role, active FROM users WHERE username = ?", req.Username).
+	err = db.QueryRow("SELECT id, password_hash, display_name, role, active FROM users WHERE username = ?", req.Username).
 		Scan(&id, &passwordHash, &displayName, &role, &active)
 	if err != nil {
 		jsonErr(w, "Invalid username or password", 401)
@@ -91,6 +96,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+		// Increment failed login attempts
+		IncrementFailedLoginAttempts(req.Username)
 		jsonErr(w, "Invalid username or password", 401)
 		return
 	}
@@ -99,6 +106,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "Account deactivated", 403)
 		return
 	}
+
+	// Reset failed login attempts on successful login
+	ResetFailedLoginAttempts(req.Username)
 
 	// Clean expired sessions
 	db.Exec("DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP")
@@ -231,6 +241,12 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check password history
+	if err := CheckPasswordHistory(userID, req.NewPassword); err != nil {
+		jsonErr(w, err.Error(), 400)
+		return
+	}
+
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		jsonErr(w, "Failed to hash password", 500)
@@ -242,6 +258,9 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err.Error(), 500)
 		return
 	}
+
+	// Add old password to history
+	AddPasswordHistory(userID, currentHash)
 
 	jsonResp(w, map[string]string{"status": "password_changed"})
 }

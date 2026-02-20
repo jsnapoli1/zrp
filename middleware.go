@@ -261,6 +261,13 @@ var globalRateLimiter = &rateLimiter{
 	requests: make(map[string][]time.Time),
 }
 
+// resetRateLimiter clears all rate limit state (for testing)
+func resetRateLimiter() {
+	globalRateLimiter.mu.Lock()
+	globalRateLimiter.requests = make(map[string][]time.Time)
+	globalRateLimiter.mu.Unlock()
+}
+
 // cleanupOldRequests removes requests older than the window
 func (rl *rateLimiter) cleanupOldRequests(key string, window time.Duration) {
 	now := time.Now()
