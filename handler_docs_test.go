@@ -152,18 +152,20 @@ func TestHandleListDocs_WithData(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var result []map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if len(result) != 2 {
-		t.Fatalf("Expected 2 documents, got %d", len(result))
+	if len(resp.Data) != 2 {
+		t.Fatalf("Expected 2 documents, got %d", len(resp.Data))
 	}
 
 	// Should be sorted by created_at DESC
-	if result[0]["id"].(string) != "DOC-002" {
-		t.Errorf("Expected DOC-002 first, got %s", result[0]["id"])
+	if resp.Data[0]["id"].(string) != "DOC-002" {
+		t.Errorf("Expected DOC-002 first, got %s", resp.Data[0]["id"])
 	}
 }
 
@@ -196,10 +198,13 @@ func TestHandleGetDoc_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
+	result := resp.Data
 
 	if result["id"].(string) != "DOC-001" {
 		t.Errorf("Expected DOC-001, got %s", result["id"])

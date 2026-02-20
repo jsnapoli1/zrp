@@ -624,10 +624,22 @@ func handleGetSavedSearches(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s SavedSearch
 		var filtersJSON string
-		if err := rows.Scan(&s.ID, &s.Name, &s.EntityType, &filtersJSON, &s.SortBy,
-			&s.SortOrder, &s.CreatedBy, &s.CreatedAt, &s.IsPublic); err != nil {
+		var sortBy, sortOrder, createdBy *string
+		var isPublic int
+		if err := rows.Scan(&s.ID, &s.Name, &s.EntityType, &filtersJSON, &sortBy,
+			&sortOrder, &createdBy, &s.CreatedAt, &isPublic); err != nil {
 			continue
 		}
+		if sortBy != nil {
+			s.SortBy = *sortBy
+		}
+		if sortOrder != nil {
+			s.SortOrder = *sortOrder
+		}
+		if createdBy != nil {
+			s.CreatedBy = *createdBy
+		}
+		s.IsPublic = isPublic == 1
 		json.Unmarshal([]byte(filtersJSON), &s.Filters)
 		searches = append(searches, s)
 	}

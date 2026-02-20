@@ -126,13 +126,13 @@ func TestHandleCalendar_CurrentMonth(t *testing.T) {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if len(resp.Data) != 3 {
-		t.Errorf("Expected 3 events for current month, got %d", len(resp.Data))
+	if len(events) != 3 {
+		t.Errorf("Expected 3 events for current month, got %d", len(events))
 	}
 
 	// Verify event types
 	types := make(map[string]int)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		types[e.Type]++
 	}
 	if types["workorder"] != 1 || types["po"] != 1 || types["quote"] != 1 {
@@ -172,12 +172,12 @@ func TestHandleCalendar_SpecificMonth(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 1 {
-		t.Errorf("Expected 1 event for March 2026, got %d", len(resp.Data))
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event for March 2026, got %d", len(events))
 	}
 
-	if len(resp.Data) > 0 && resp.Data[0].ID != "WO-MARCH" {
-		t.Errorf("Expected WO-MARCH, got %s", resp.Data[0].ID)
+	if len(events) > 0 && events[0].ID != "WO-MARCH" {
+		t.Errorf("Expected WO-MARCH, got %s", events[0].ID)
 	}
 }
 
@@ -201,8 +201,8 @@ func TestHandleCalendar_Empty(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 0 {
-		t.Errorf("Expected empty array for month with no events, got %d", len(resp.Data))
+	if len(events) != 0 {
+		t.Errorf("Expected empty array for month with no events, got %d", len(events))
 	}
 }
 
@@ -233,13 +233,13 @@ func TestHandleCalendar_WorkOrderWithNotes(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 1 {
-		t.Fatalf("Expected 1 event, got %d", len(resp.Data))
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(events))
 	}
 
 	// Title should use notes if present
-	if resp.Data[0].Title != "Custom build for customer" {
-		t.Errorf("Expected title to use notes, got '%s'", resp.Data[0].Title)
+	if events[0].Title != "Custom build for customer" {
+		t.Errorf("Expected title to use notes, got '%s'", events[0].Title)
 	}
 }
 
@@ -270,14 +270,14 @@ func TestHandleCalendar_WorkOrderWithoutNotes(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 1 {
-		t.Fatalf("Expected 1 event, got %d", len(resp.Data))
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(events))
 	}
 
 	// Title should be "Build ASM-123 ×25"
 	expected := "Build ASM-123 ×25"
-	if resp.Data[0].Title != expected {
-		t.Errorf("Expected title '%s', got '%s'", expected, resp.Data[0].Title)
+	if events[0].Title != expected {
+		t.Errorf("Expected title '%s', got '%s'", expected, events[0].Title)
 	}
 }
 
@@ -306,12 +306,12 @@ func TestHandleCalendar_WorkOrderEstimatedDueDate(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 
 	// The estimated due date is March 1 + 30 days = March 31, which is in March
-	if len(resp.Data) != 1 {
-		t.Errorf("Expected 1 event for estimated due date in March, got %d", len(resp.Data))
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event for estimated due date in March, got %d", len(events))
 	}
 
-	if len(resp.Data) > 0 && resp.Data[0].ID != "WO-ESTIMATED" {
-		t.Errorf("Expected WO-ESTIMATED, got %s", resp.Data[0].ID)
+	if len(events) > 0 && events[0].ID != "WO-ESTIMATED" {
+		t.Errorf("Expected WO-ESTIMATED, got %s", events[0].ID)
 	}
 }
 
@@ -344,9 +344,9 @@ func TestHandleCalendar_POWithNotes(t *testing.T) {
 
 	// Find PO event
 	var poEvent *CalendarEvent
-	for i := range resp.Data {
-		if resp.Data[i].Type == "po" {
-			poEvent = &resp.Data[i]
+	for i := range events {
+		if events[i].Type == "po" {
+			poEvent = &events[i]
 			break
 		}
 	}
@@ -390,9 +390,9 @@ func TestHandleCalendar_POWithoutNotes(t *testing.T) {
 
 	// Find PO event
 	var poEvent *CalendarEvent
-	for i := range resp.Data {
-		if resp.Data[i].Type == "po" {
-			poEvent = &resp.Data[i]
+	for i := range events {
+		if events[i].Type == "po" {
+			poEvent = &events[i]
 			break
 		}
 	}
@@ -436,9 +436,9 @@ func TestHandleCalendar_QuoteWithCustomer(t *testing.T) {
 
 	// Find quote event
 	var quoteEvent *CalendarEvent
-	for i := range resp.Data {
-		if resp.Data[i].Type == "quote" {
-			quoteEvent = &resp.Data[i]
+	for i := range events {
+		if events[i].Type == "quote" {
+			quoteEvent = &events[i]
 			break
 		}
 	}
@@ -483,9 +483,9 @@ func TestHandleCalendar_QuoteWithoutCustomer(t *testing.T) {
 
 	// Find quote event
 	var quoteEvent *CalendarEvent
-	for i := range resp.Data {
-		if resp.Data[i].Type == "quote" {
-			quoteEvent = &resp.Data[i]
+	for i := range events {
+		if events[i].Type == "quote" {
+			quoteEvent = &events[i]
 			break
 		}
 	}
@@ -531,13 +531,13 @@ func TestHandleCalendar_EventColors(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 3 {
-		t.Fatalf("Expected 3 events, got %d", len(resp.Data))
+	if len(events) != 3 {
+		t.Fatalf("Expected 3 events, got %d", len(events))
 	}
 
 	// Verify colors
 	colorMap := make(map[string]string)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		colorMap[e.Type] = e.Color
 	}
 
@@ -578,14 +578,14 @@ func TestHandleCalendar_DateFormatting(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 1 {
-		t.Fatalf("Expected 1 event, got %d", len(resp.Data))
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(events))
 	}
 
 	// Date should be formatted as YYYY-MM-DD (first 10 chars)
 	expectedDate := woDate.Format("2006-01-02")
-	if resp.Data[0].Date != expectedDate {
-		t.Errorf("Expected date '%s', got '%s'", expectedDate, resp.Data[0].Date)
+	if events[0].Date != expectedDate {
+		t.Errorf("Expected date '%s', got '%s'", expectedDate, events[0].Date)
 	}
 }
 
@@ -622,12 +622,12 @@ func TestHandleCalendar_DateRangeQuery(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 3 {
-		t.Errorf("Expected 3 events in March, got %d", len(resp.Data))
+	if len(events) != 3 {
+		t.Errorf("Expected 3 events in March, got %d", len(events))
 	}
 
 	// Verify all are from March
-	for _, e := range resp.Data {
+	for _, e := range events {
 		if !strings.HasPrefix(e.Date, "2026-03") {
 			t.Errorf("Event should be from March 2026, got date '%s'", e.Date)
 		}
@@ -664,13 +664,13 @@ func TestHandleCalendar_MultipleEventsPerDay(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 3 {
-		t.Errorf("Expected 3 events on same day, got %d", len(resp.Data))
+	if len(events) != 3 {
+		t.Errorf("Expected 3 events on same day, got %d", len(events))
 	}
 
 	// All should have same date
 	expectedDate := sameDate.Format("2006-01-02")
-	for _, e := range resp.Data {
+	for _, e := range events {
 		if e.Date != expectedDate {
 			t.Errorf("Expected all events to have date '%s', got '%s'", expectedDate, e.Date)
 		}
@@ -699,8 +699,8 @@ func TestHandleCalendar_InvalidMonth(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 
 	// Should return events for month 13 which SQLite will handle
-	if len(resp.Data) != 0 {
-		t.Logf("Got %d events for month 13 (handled by SQLite)", len(resp.Data))
+	if len(events) != 0 {
+		t.Logf("Got %d events for month 13 (handled by SQLite)", len(events))
 	}
 }
 
@@ -744,13 +744,13 @@ func TestHandleCalendar_EventAggregation(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 18 {
-		t.Errorf("Expected 18 total events (10 WO + 5 PO + 3 quotes), got %d", len(resp.Data))
+	if len(events) != 18 {
+		t.Errorf("Expected 18 total events (10 WO + 5 PO + 3 quotes), got %d", len(events))
 	}
 
 	// Count by type
 	counts := make(map[string]int)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		counts[e.Type]++
 	}
 
@@ -790,8 +790,8 @@ func TestHandleCalendar_DefaultsToCurrentMonth(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if len(resp.Data) != 1 {
-		t.Errorf("Expected 1 event in current month, got %d", len(resp.Data))
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event in current month, got %d", len(events))
 	}
 }
 
@@ -826,7 +826,7 @@ func TestHandleCalendar_EventRecordIDPopulated(t *testing.T) {
 
 	// Verify each event has correct ID
 	idMap := make(map[string]string)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		idMap[e.Type] = e.ID
 	}
 

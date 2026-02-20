@@ -224,13 +224,10 @@ func TestHandleBulkECOs_ApproveSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 2 {
 		t.Errorf("Expected 2 successful operations, got %d", result.Success)
@@ -281,13 +278,10 @@ func TestHandleBulkECOs_PartialFailure(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 1 {
 		t.Errorf("Expected 1 successful operation, got %d", result.Success)
@@ -368,13 +362,10 @@ func TestHandleBulkECOs_Delete(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 1 {
 		t.Errorf("Expected 1 successful deletion, got %d", result.Success)
@@ -416,13 +407,10 @@ func TestHandleBulkWorkOrders_CompleteSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 2 {
 		t.Errorf("Expected 2 successful operations, got %d", result.Success)
@@ -468,13 +456,10 @@ func TestHandleBulkNCRs_CloseSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 1 {
 		t.Errorf("Expected 1 successful operation, got %d", result.Success)
@@ -517,13 +502,10 @@ func TestHandleBulkDevices_DecommissionSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 2 {
 		t.Errorf("Expected 2 successful operations, got %d", result.Success)
@@ -571,13 +553,10 @@ func TestHandleBulkInventory_DeleteSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 2 {
 		t.Errorf("Expected 2 successful deletions, got %d", result.Success)
@@ -618,13 +597,10 @@ func TestHandleBulkRMAs_CloseSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 1 {
 		t.Errorf("Expected 1 successful operation, got %d", result.Success)
@@ -659,13 +635,10 @@ func TestHandleBulkParts_ArchiveSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 2 {
 		t.Errorf("Expected 2 successful operations, got %d", result.Success)
@@ -713,13 +686,10 @@ func TestHandleBulkPurchaseOrders_ApproveSuccess(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 2 {
 		t.Errorf("Expected 2 successful operations, got %d", result.Success)
@@ -775,13 +745,10 @@ func TestHandleBulkECOs_LargeBatch(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 100 {
 		t.Errorf("Expected 100 successful operations, got %d", result.Success)
@@ -808,13 +775,10 @@ func TestHandleBulkECOs_EmptyIDs(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var resp struct {
-		Data BulkResponse `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var result BulkResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	result := resp.Data
 
 	if result.Success != 0 {
 		t.Errorf("Expected 0 successful operations, got %d", result.Success)

@@ -217,13 +217,15 @@ func TestHandleListBackups_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var backups []BackupInfo
-	if err := json.NewDecoder(w.Body).Decode(&backups); err != nil {
+	var resp struct {
+		Data []BackupInfo `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if len(backups) != 1 {
-		t.Errorf("Expected 1 backup, got %d", len(backups))
+	if len(resp.Data) != 1 {
+		t.Errorf("Expected 1 backup, got %d", len(resp.Data))
 	}
 }
 
@@ -245,13 +247,15 @@ func TestHandleCreateBackup_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp map[string]string
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var respWrapper struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if resp["status"] != "ok" {
-		t.Errorf("Expected status ok, got %s", resp["status"])
+	if respWrapper.Data["status"] != "ok" {
+		t.Errorf("Expected status ok, got %s", respWrapper.Data["status"])
 	}
 }
 
@@ -411,13 +415,15 @@ func TestHandleRestoreBackup_Success(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp map[string]string
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var respWrapper struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if resp["status"] != "ok" {
-		t.Errorf("Expected status ok, got %s", resp["status"])
+	if respWrapper.Data["status"] != "ok" {
+		t.Errorf("Expected status ok, got %s", respWrapper.Data["status"])
 	}
 
 	// Verify database was replaced

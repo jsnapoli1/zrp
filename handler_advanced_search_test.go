@@ -661,10 +661,14 @@ func TestHandleSaveSavedSearch(t *testing.T) {
 		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result SavedSearch
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+	var resp struct {
+		Data SavedSearch `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
+
+	result := resp.Data
 
 	if result.ID == "" {
 		t.Error("Expected ID to be generated")
@@ -692,17 +696,26 @@ func TestHandleGetSavedSearches(t *testing.T) {
 
 	// Insert test saved searches
 	filters := `[{"field":"status","operator":"eq","value":"pending"}]`
-	db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by, is_public) 
+	_, err := db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by, is_public) 
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		"search-1", "My Search", "workorders", filters, "test-user", 0)
+	if err != nil {
+		t.Fatalf("Failed to insert search-1: %v", err)
+	}
 
-	db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by, is_public) 
+	_, err = db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by, is_public) 
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		"search-2", "Public Search", "ecos", filters, "other-user", 1)
+	if err != nil {
+		t.Fatalf("Failed to insert search-2: %v", err)
+	}
 
-	db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by, is_public) 
+	_, err = db.Exec(`INSERT INTO saved_searches (id, name, entity_type, filters, created_by, is_public) 
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		"search-3", "Private Search", "workorders", filters, "other-user", 0)
+	if err != nil {
+		t.Fatalf("Failed to insert search-3: %v", err)
+	}
 
 	tests := []struct {
 		name          string
@@ -737,16 +750,18 @@ func TestHandleGetSavedSearches(t *testing.T) {
 			handleGetSavedSearches(w, req)
 
 			if w.Code != http.StatusOK {
-				t.Errorf("Expected status 200, got %d", w.Code)
+				t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 			}
 
-			var searches []SavedSearch
-			if err := json.NewDecoder(w.Body).Decode(&searches); err != nil {
+			var resp struct {
+				Data []SavedSearch `json:"data"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
 
-			if len(searches) != tt.expectedCount {
-				t.Errorf("Expected %d searches, got %d", tt.expectedCount, len(searches))
+			if len(resp.Data) != tt.expectedCount {
+				t.Errorf("Expected %d searches, got %d", tt.expectedCount, len(resp.Data))
 			}
 		})
 	}
@@ -810,13 +825,15 @@ func TestHandleGetQuickFilters(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var filters []QuickFilter
-	if err := json.NewDecoder(w.Body).Decode(&filters); err != nil {
+	var resp struct {
+		Data []QuickFilter `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
 	// Should return at least some quick filters
-	if len(filters) == 0 {
+	if len(resp.Data) == 0 {
 		t.Error("Expected at least some quick filters")
 	}
 }
@@ -881,13 +898,15 @@ func TestHandleGetSearchHistory(t *testing.T) {
 				t.Errorf("Expected status 200, got %d", w.Code)
 			}
 
-			var history []interface{}
-			if err := json.NewDecoder(w.Body).Decode(&history); err != nil {
+			var resp struct {
+				Data []interface{} `json:"data"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
 
-			if len(history) != tt.expectedCount {
-				t.Errorf("Expected %d history entries, got %d", tt.expectedCount, len(history))
+			if len(resp.Data) != tt.expectedCount {
+				t.Errorf("Expected %d history entries, got %d", tt.expectedCount, len(resp.Data))
 			}
 		})
 	}

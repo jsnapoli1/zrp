@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -66,15 +67,15 @@ func TestHandleListAPIKeys(t *testing.T) {
 	db = setupAPIKeysTestDB(t)
 	defer db.Close()
 
-	// Insert test API keys
-	_, err := db.Exec(`INSERT INTO api_keys (name, key_hash, key_prefix, created_by, enabled) VALUES (?, ?, ?, ?, ?)`,
-		"Production Key", "hash1", "zrp_abc12345", "admin", 1)
+	// Insert test API keys with explicit timestamps to ensure order
+	_, err := db.Exec(`INSERT INTO api_keys (name, key_hash, key_prefix, created_by, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"Production Key", "hash1", "zrp_abc12345", "admin", 1, "2024-01-01T10:00:00Z")
 	if err != nil {
 		t.Fatalf("Failed to insert test key: %v", err)
 	}
 
-	_, err = db.Exec(`INSERT INTO api_keys (name, key_hash, key_prefix, created_by, enabled, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		"Test Key", "hash2", "zrp_def67890", "testuser", 0, "2025-12-31T23:59:59Z")
+	_, err = db.Exec(`INSERT INTO api_keys (name, key_hash, key_prefix, created_by, enabled, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"Test Key", "hash2", "zrp_def67890", "testuser", 0, "2025-12-31T23:59:59Z", "2024-01-02T10:00:00Z")
 	if err != nil {
 		t.Fatalf("Failed to insert test key: %v", err)
 	}
@@ -285,10 +286,10 @@ func TestHandleDeleteAPIKey_Success(t *testing.T) {
 	}
 	id, _ := result.LastInsertId()
 
-	req := httptest.NewRequest("DELETE", "/api/keys/"+string(rune(id)), nil)
+	req := httptest.NewRequest("DELETE", "/api/keys/"+fmt.Sprintf("%d", id), nil)
 	w := httptest.NewRecorder()
 
-	handleDeleteAPIKey(w, req, string(rune(id+48))) // Convert to ASCII digit
+	handleDeleteAPIKey(w, req, fmt.Sprintf("%d", id))
 
 	if w.Code != 200 {
 		t.Errorf("Expected status 200, got %d", w.Code)

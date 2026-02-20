@@ -132,7 +132,7 @@ func TestHandleCalendar_CurrentMonth(t *testing.T) {
 
 	// Verify event types
 	types := make(map[string]int)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		types[e.Type]++
 	}
 	if types["workorder"] != 1 || types["po"] != 1 || types["quote"] != 1 {
@@ -344,7 +344,7 @@ func TestHandleCalendar_POWithNotes(t *testing.T) {
 
 	// Find PO event
 	var poEvent *CalendarEvent
-	for i := range resp.Data {
+	for i := range events {
 		if resp.Data[i].Type == "po" {
 			poEvent = &resp.Data[i]
 			break
@@ -390,7 +390,7 @@ func TestHandleCalendar_POWithoutNotes(t *testing.T) {
 
 	// Find PO event
 	var poEvent *CalendarEvent
-	for i := range resp.Data {
+	for i := range events {
 		if resp.Data[i].Type == "po" {
 			poEvent = &resp.Data[i]
 			break
@@ -436,7 +436,7 @@ func TestHandleCalendar_QuoteWithCustomer(t *testing.T) {
 
 	// Find quote event
 	var quoteEvent *CalendarEvent
-	for i := range resp.Data {
+	for i := range events {
 		if resp.Data[i].Type == "quote" {
 			quoteEvent = &resp.Data[i]
 			break
@@ -483,7 +483,7 @@ func TestHandleCalendar_QuoteWithoutCustomer(t *testing.T) {
 
 	// Find quote event
 	var quoteEvent *CalendarEvent
-	for i := range resp.Data {
+	for i := range events {
 		if resp.Data[i].Type == "quote" {
 			quoteEvent = &resp.Data[i]
 			break
@@ -537,7 +537,7 @@ func TestHandleCalendar_EventColors(t *testing.T) {
 
 	// Verify colors
 	colorMap := make(map[string]string)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		colorMap[e.Type] = e.Color
 	}
 
@@ -627,7 +627,7 @@ func TestHandleCalendar_DateRangeQuery(t *testing.T) {
 	}
 
 	// Verify all are from March
-	for _, e := range resp.Data {
+	for _, e := range events {
 		if !strings.HasPrefix(e.Date, "2026-03") {
 			t.Errorf("Event should be from March 2026, got date '%s'", e.Date)
 		}
@@ -670,7 +670,7 @@ func TestHandleCalendar_MultipleEventsPerDay(t *testing.T) {
 
 	// All should have same date
 	expectedDate := sameDate.Format("2006-01-02")
-	for _, e := range resp.Data {
+	for _, e := range events {
 		if e.Date != expectedDate {
 			t.Errorf("Expected all events to have date '%s', got '%s'", expectedDate, e.Date)
 		}
@@ -750,7 +750,7 @@ func TestHandleCalendar_EventAggregation(t *testing.T) {
 
 	// Count by type
 	counts := make(map[string]int)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		counts[e.Type]++
 	}
 
@@ -826,7 +826,7 @@ func TestHandleCalendar_EventRecordIDPopulated(t *testing.T) {
 
 	// Verify each event has correct ID
 	idMap := make(map[string]string)
-	for _, e := range resp.Data {
+	for _, e := range events {
 		idMap[e.Type] = e.ID
 	}
 
