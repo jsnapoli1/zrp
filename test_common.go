@@ -2,12 +2,10 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -163,21 +161,4 @@ func assertStatus(t *testing.T, w *httptest.ResponseRecorder, expected int) {
 	if w.Code != expected {
 		t.Errorf("Expected status %d, got %d. Body: %s", expected, w.Code, w.Body.String())
 	}
-}
-
-// withUsername adds username to request context
-func withUsername(req *http.Request, username string) *http.Request {
-	ctx := context.WithValue(req.Context(), ctxUsername, username)
-	return req.WithContext(ctx)
-}
-
-// withUserID adds user ID to request context
-func withUserID(req *http.Request, userID int) *http.Request {
-	ctx := context.WithValue(req.Context(), ctxUserID, userID)
-	return req.WithContext(ctx)
-}
-
-// stringReader creates a strings.Reader from a string (helper for request bodies)
-func stringReader(s string) *strings.Reader {
-	return strings.NewReader(s)
 }
