@@ -1,0 +1,613 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	
+	"net/http/httptest"
+	"testing"
+
+	_ "modernc.org/sqlite"
+)
+
+func setupNotificationPrefsTestDB(t *testing.T) *sql.DB {
+	testDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open test DB: %v", err)
+	}
+
+	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("Failed to enable foreign keys: %v", err)
+	}
+
+	// Create notification_preferences table
+	_, err = testDB.Exec(`
+		CREATE TABLE notification_preferences (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			notification_type TEXT NOT NULL,
+			enabled INTEGER DEFAULT 1,
+			delivery_method TEXT DEFAULT 'in_app',
+			threshold_value REAL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, notification_type)
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create notification_preferences table: %v", err)
+	}
+
+	// Create users table
+	_, err = testDB.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			active INTEGER DEFAULT 1
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create users table: %v", err)
+	}
+
+	// Create audit_log table
+	_, err = testDB.Exec(`
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT DEFAULT 'system',
+			action TEXT NOT NULL,
+			module TEXT NOT NULL,
+			record_id TEXT NOT NULL,
+			summary TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create audit_log table: %v", err)
+	}
+
+	// Insert test users
+	testDB.Exec("INSERT INTO users (id, username, active) VALUES (1, 'testuser', 1)")
+	testDB.Exec("INSERT INTO users (id, username, active) VALUES (2, 'admin', 1)")
+
+	return testDB
+}
+
+func TestHandleListNotificationTypes(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/notification-types", nil)
+	w := httptest.NewRecorder()
+
+	handleListNotificationTypes(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var types []NotificationTypeInfo
+	if err := json.NewDecoder(w.Body).Decode(&types); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(types) == 0 {
+		t.Error("Expected notification types, got empty array")
+	}
+
+	// Verify structure of types
+	for _, nt := range types {
+		if nt.Type == "" {
+			t.Error("Notification type has empty Type field")
+		}
+		if nt.Name == "" {
+			t.Error("Notification type has empty Name field")
+		}
+		if nt.Icon == "" {
+			t.Error("Notification type has empty Icon field")
+		}
+
+		// Verify threshold types have threshold fields
+		if nt.HasThreshold {
+			if nt.ThresholdLabel == nil {
+				t.Errorf("Type %s has HasThreshold=true but ThresholdLabel is nil", nt.Type)
+			}
+			if nt.ThresholdDefault == nil {
+				t.Errorf("Type %s has HasThreshold=true but ThresholdDefault is nil", nt.Type)
+			}
+		}
+	}
+}
+
+func TestIsValidNotificationType(t *testing.T) {
+	tests := []struct {
+		ntype string
+		valid bool
+	}{
+		{"low_stock", true},
+		{"overdue_wo", true},
+		{"open_ncr", true},
+		{"eco_approval", true},
+		{"invalid_type", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ntype, func(t *testing.T) {
+			result := isValidNotificationType(tt.ntype)
+			if result != tt.valid {
+				t.Errorf("isValidNotificationType(%q) = %v, want %v", tt.ntype, result, tt.valid)
+			}
+		})
+	}
+}
+
+func TestIsValidDeliveryMethod(t *testing.T) {
+	tests := []struct {
+		method string
+		valid  bool
+	}{
+		{"in_app", true},
+		{"email", true},
+		{"both", true},
+		{"sms", false},
+		{"", false},
+		{"invalid", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			result := isValidDeliveryMethod(tt.method)
+			if result != tt.valid {
+				t.Errorf("isValidDeliveryMethod(%q) = %v, want %v", tt.method, result, tt.valid)
+			}
+		})
+	}
+}
+
+func TestEnsureDefaultPreferences(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+
+	// Ensure defaults are created
+	ensureDefaultPreferences(userID)
+
+	// Verify all notification types have defaults
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM notification_preferences WHERE user_id = ?", userID).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to count preferences: %v", err)
+	}
+
+	expectedCount := len(notificationTypes)
+	if count != expectedCount {
+		t.Errorf("Expected %d default preferences, got %d", expectedCount, count)
+	}
+
+	// Verify they're all enabled by default
+	var enabledCount int
+	db.QueryRow("SELECT COUNT(*) FROM notification_preferences WHERE user_id = ? AND enabled = 1", userID).Scan(&enabledCount)
+	if enabledCount != expectedCount {
+		t.Errorf("Expected all %d preferences enabled, got %d", expectedCount, enabledCount)
+	}
+
+	// Calling again should not create duplicates
+	ensureDefaultPreferences(userID)
+	db.QueryRow("SELECT COUNT(*) FROM notification_preferences WHERE user_id = ?", userID).Scan(&count)
+	if count != expectedCount {
+		t.Errorf("Defaults created duplicates: expected %d, got %d", expectedCount, count)
+	}
+}
+
+func TestHandleGetNotificationPreferences_Unauthorized(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	req := httptest.NewRequest("GET", "/api/notification-preferences", nil)
+	w := httptest.NewRecorder()
+
+	handleGetNotificationPreferences(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("Expected status 401 for unauthorized, got %d", w.Code)
+	}
+}
+
+func TestHandleGetNotificationPreferences_WithDefaults(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	req := httptest.NewRequest("GET", "/api/notification-preferences", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	w := httptest.NewRecorder()
+
+	handleGetNotificationPreferences(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var prefs []NotificationPreference
+	if err := json.NewDecoder(w.Body).Decode(&prefs); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// Should auto-create defaults
+	if len(prefs) != len(notificationTypes) {
+		t.Errorf("Expected %d preferences, got %d", len(notificationTypes), len(prefs))
+	}
+
+	// Verify all belong to the correct user
+	for _, p := range prefs {
+		if p.UserID != userID {
+			t.Errorf("Preference has wrong user_id: expected %d, got %d", userID, p.UserID)
+		}
+		if !p.Enabled {
+			t.Error("Default preferences should be enabled")
+		}
+		if p.DeliveryMethod != "in_app" {
+			t.Errorf("Default delivery method should be 'in_app', got %s", p.DeliveryMethod)
+		}
+	}
+}
+
+func TestHandleGetNotificationPreferences_UserIsolation(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	// Create prefs for user 1
+	db.Exec("INSERT INTO notification_preferences (user_id, notification_type, enabled) VALUES (1, 'low_stock', 0)")
+
+	// Create prefs for user 2
+	db.Exec("INSERT INTO notification_preferences (user_id, notification_type, enabled) VALUES (2, 'low_stock', 1)")
+
+	// Request as user 1
+	req := httptest.NewRequest("GET", "/api/notification-preferences", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, 1))
+	w := httptest.NewRecorder()
+
+	handleGetNotificationPreferences(w, req)
+
+	var prefs []NotificationPreference
+	json.NewDecoder(w.Body).Decode(&prefs)
+
+	// Should only see user 1's preferences
+	for _, p := range prefs {
+		if p.UserID != 1 {
+			t.Errorf("User 1 should not see user %d's preferences", p.UserID)
+		}
+		if p.Type == "low_stock" && p.Enabled {
+			t.Error("User 1's low_stock should be disabled")
+		}
+	}
+}
+
+func TestHandleUpdateNotificationPreferences_Success(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	prefs := []NotificationPreference{
+		{Type: "low_stock", Enabled: false, DeliveryMethod: "email", ThresholdValue: float64Ptr(5)},
+		{Type: "overdue_wo", Enabled: true, DeliveryMethod: "both", ThresholdValue: float64Ptr(14)},
+	}
+	body, _ := json.Marshal(prefs)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateNotificationPreferences(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify updates were applied
+	var enabled int
+	var deliveryMethod string
+	var threshold float64
+	err := db.QueryRow("SELECT enabled, delivery_method, threshold_value FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
+		userID, "low_stock").Scan(&enabled, &deliveryMethod, &threshold)
+	if err != nil {
+		t.Fatalf("Failed to query updated preference: %v", err)
+	}
+
+	if enabled != 0 {
+		t.Error("low_stock should be disabled")
+	}
+	if deliveryMethod != "email" {
+		t.Errorf("Expected delivery_method 'email', got %s", deliveryMethod)
+	}
+	if threshold != 5.0 {
+		t.Errorf("Expected threshold 5.0, got %f", threshold)
+	}
+}
+
+func TestHandleUpdateNotificationPreferences_Unauthorized(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	prefs := []NotificationPreference{
+		{Type: "low_stock", Enabled: false, DeliveryMethod: "email"},
+	}
+	body, _ := json.Marshal(prefs)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateNotificationPreferences(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("Expected status 401, got %d", w.Code)
+	}
+}
+
+func TestHandleUpdateNotificationPreferences_InvalidType(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	prefs := []NotificationPreference{
+		{Type: "invalid_type", Enabled: true, DeliveryMethod: "in_app"},
+	}
+	body, _ := json.Marshal(prefs)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateNotificationPreferences(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200 (invalid types skipped), got %d", w.Code)
+	}
+
+	// Verify invalid type was not stored
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
+		userID, "invalid_type").Scan(&count)
+	if count != 0 {
+		t.Error("Invalid notification type should not be stored")
+	}
+}
+
+func TestHandleUpdateNotificationPreferences_InvalidDeliveryMethod(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	prefs := []NotificationPreference{
+		{Type: "low_stock", Enabled: true, DeliveryMethod: "invalid_method"},
+	}
+	body, _ := json.Marshal(prefs)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateNotificationPreferences(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify invalid method was replaced with default
+	var deliveryMethod string
+	db.QueryRow("SELECT delivery_method FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
+		userID, "low_stock").Scan(&deliveryMethod)
+	if deliveryMethod != "in_app" {
+		t.Errorf("Invalid delivery method should default to 'in_app', got %s", deliveryMethod)
+	}
+}
+
+func TestHandleUpdateSingleNotificationPreference_Success(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	ensureDefaultPreferences(userID)
+
+	pref := NotificationPreference{
+		Enabled:        false,
+		DeliveryMethod: "email",
+		ThresholdValue: float64Ptr(10),
+	}
+	body, _ := json.Marshal(pref)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences/low_stock", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateSingleNotificationPreference(w, req, "low_stock")
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify update
+	var enabled int
+	var threshold float64
+	db.QueryRow("SELECT enabled, threshold_value FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
+		userID, "low_stock").Scan(&enabled, &threshold)
+
+	if enabled != 0 {
+		t.Error("Preference should be disabled")
+	}
+	if threshold != 10.0 {
+		t.Errorf("Expected threshold 10.0, got %f", threshold)
+	}
+}
+
+func TestHandleUpdateSingleNotificationPreference_InvalidType(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	pref := NotificationPreference{Enabled: true, DeliveryMethod: "in_app"}
+	body, _ := json.Marshal(pref)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences/invalid_type", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateSingleNotificationPreference(w, req, "invalid_type")
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400 for invalid type, got %d", w.Code)
+	}
+}
+
+func TestGetUserNotifPref(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	db.Exec("INSERT INTO notification_preferences (user_id, notification_type, enabled, delivery_method, threshold_value) VALUES (?, ?, ?, ?, ?)",
+		userID, "low_stock", 0, "email", 15.0)
+
+	enabled, deliveryMethod, threshold := getUserNotifPref(userID, "low_stock")
+
+	if enabled {
+		t.Error("Expected enabled=false")
+	}
+	if deliveryMethod != "email" {
+		t.Errorf("Expected delivery_method 'email', got %s", deliveryMethod)
+	}
+	if threshold == nil || *threshold != 15.0 {
+		t.Errorf("Expected threshold 15.0, got %v", threshold)
+	}
+
+	// Test non-existent preference (should return defaults)
+	enabled, deliveryMethod, threshold = getUserNotifPref(userID, "nonexistent")
+	if !enabled {
+		t.Error("Non-existent pref should default to enabled=true")
+	}
+	if deliveryMethod != "in_app" {
+		t.Errorf("Non-existent pref should default to 'in_app', got %s", deliveryMethod)
+	}
+}
+
+func TestHandleUpdateNotificationPreferences_InvalidJSON(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader([]byte("invalid json")))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateNotificationPreferences(w, req)
+
+	if w.Code != 400 {
+		t.Errorf("Expected status 400 for invalid JSON, got %d", w.Code)
+	}
+}
+
+func TestNotificationPreferences_NullThreshold(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	prefs := []NotificationPreference{
+		{Type: "open_ncr", Enabled: true, DeliveryMethod: "in_app", ThresholdValue: nil},
+	}
+	body, _ := json.Marshal(prefs)
+
+	req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleUpdateNotificationPreferences(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify NULL threshold is stored
+	var threshold sql.NullFloat64
+	db.QueryRow("SELECT threshold_value FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
+		userID, "open_ncr").Scan(&threshold)
+
+	if threshold.Valid {
+		t.Error("Threshold should be NULL for types without threshold")
+	}
+}
+
+func TestNotificationPreferences_Concurrency(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupNotificationPrefsTestDB(t)
+	defer db.Close()
+
+	userID := 1
+	ensureDefaultPreferences(userID)
+
+	// Concurrent updates to same preference
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func(val int) {
+			pref := NotificationPreference{
+				Type:           "low_stock",
+				Enabled:        val%2 == 0,
+				DeliveryMethod: "in_app",
+			}
+			body, _ := json.Marshal([]NotificationPreference{pref})
+			req := httptest.NewRequest("PUT", "/api/notification-preferences", bytes.NewReader(body))
+			req = req.WithContext(context.WithValue(req.Context(), ctxUserID, userID))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handleUpdateNotificationPreferences(w, req)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all to complete
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// Verify no duplicate entries
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
+		userID, "low_stock").Scan(&count)
+	if count != 1 {
+		t.Errorf("Expected 1 preference after concurrent updates, got %d", count)
+	}
+}
