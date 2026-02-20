@@ -33,6 +33,22 @@ func setupQueryProfilerTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to create test_data table: %v", err)
 	}
 
+	// Create audit_log table - CRITICAL: Used by almost every handler
+	_, err = testDB.Exec(`
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+			username TEXT,
+			action TEXT,
+			table_name TEXT,
+			record_id TEXT,
+			details TEXT
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create audit_log table: %v", err)
+	}
+
 	// Insert test data
 	for i := 1; i <= 10; i++ {
 		_, err = testDB.Exec("INSERT INTO test_data (name, value) VALUES (?, ?)", 
