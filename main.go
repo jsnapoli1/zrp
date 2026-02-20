@@ -799,8 +799,8 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	// Middleware chain: security headers -> gzip -> logging -> auth -> rbac -> routes
-	root.Handle("/", securityHeaders(gzipMiddleware(logging(requireAuth(requireRBAC(mux))))))
+	// Middleware chain: security headers -> rate limit -> gzip -> logging -> auth -> rbac -> routes
+	root.Handle("/", securityHeaders(rateLimitMiddleware(gzipMiddleware(logging(requireAuth(requireRBAC(mux)))))))
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("ZRP server starting on http://localhost%s", addr)

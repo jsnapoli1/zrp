@@ -133,9 +133,17 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		Expires:  expires,
 	})
 
+	// Generate CSRF token for the user
+	csrfToken, err := generateCSRFToken(id)
+	if err != nil {
+		// Log error but don't fail login
+		csrfToken = ""
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"user": UserResponse{ID: id, Username: req.Username, DisplayName: displayName, Role: role},
+		"user":       UserResponse{ID: id, Username: req.Username, DisplayName: displayName, Role: role},
+		"csrf_token": csrfToken,
 	})
 }
 
@@ -242,4 +250,47 @@ func generateToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// generateCSRFToken creates a new CSRF token for the given user
+func generateCSRFToken(userID int) (string, error) {
+	// Clean up expired tokens first
+	db.Exec("DELETE FROM csrf_tokens WHERE expires_at < CURRENT_TIMESTAMP")
+	
+	// Clean up old tokens for this user (keep only the most recent 5)
+	db.Exec(`DELETE FROM csrf_tokens WHERE user_id = ? AND token NOT IN (
+		SELECT token FROM csrf_tokens WHERE user_id = ? ORDER BY created_at DESC LIMIT 5
+	)`, userID, userID)
+
+	token := generateToken()
+	expires := time.Now().Add(1 * time.Hour) // CSRF tokens expire in 1 hour
+	
+	_, err := db.Exec("INSERT INTO csrf_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+		token, userID, expires.Format("2006-01-02 15:04:05"))
+	if err != nil {
+		return "", err
+	}
+	
+	return token, nil
+}
+
+// handleGetCSRFToken returns a new CSRF token for the authenticated user
+func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(ctxUserID).(int)
+	if !ok || userID == 0 {
+		jsonErr(w, "Unauthorized", 401)
+		return
+	}
+
+	token, err := generateCSRFToken(userID)
+	if err != nil {
+		jsonErr(w, "Failed to generate CSRF token", 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"csrf_token": token,
+		"expires_in": "3600", // 1 hour in seconds
+	})
 }

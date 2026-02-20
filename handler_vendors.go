@@ -6,6 +6,10 @@ import (
 )
 
 func handleListVendors(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		jsonErr(w, "database not initialized", 503)
+		return
+	}
 	rows, err := db.Query("SELECT id,name,COALESCE(website,''),COALESCE(contact_name,''),COALESCE(contact_email,''),COALESCE(contact_phone,''),COALESCE(notes,''),status,lead_time_days,created_at FROM vendors ORDER BY name")
 	if err != nil {
 		jsonErr(w, err.Error(), 500)
@@ -23,6 +27,10 @@ func handleListVendors(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetVendor(w http.ResponseWriter, r *http.Request, id string) {
+	if db == nil {
+		jsonErr(w, "database not initialized", 503)
+		return
+	}
 	var v Vendor
 	err := db.QueryRow("SELECT id,name,COALESCE(website,''),COALESCE(contact_name,''),COALESCE(contact_email,''),COALESCE(contact_phone,''),COALESCE(notes,''),status,lead_time_days,created_at FROM vendors WHERE id=?", id).
 		Scan(&v.ID, &v.Name, &v.Website, &v.ContactName, &v.ContactEmail, &v.ContactPhone, &v.Notes, &v.Status, &v.LeadTimeDays, &v.CreatedAt)
@@ -34,6 +42,10 @@ func handleGetVendor(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 func handleCreateVendor(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		jsonErr(w, "database not initialized", 503)
+		return
+	}
 	var v Vendor
 	if err := decodeBody(r, &v); err != nil {
 		jsonErr(w, "invalid body", 400)
