@@ -427,7 +427,7 @@ func TestHandleScanLookup_MalformedBarcodes(t *testing.T) {
 
 	for i, input := range malformedInputs {
 		t.Run(fmt.Sprintf("Malformed_%d", i), func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/scan?code="+input, nil)
+			req := httptest.NewRequest("GET", "/api/scan?code="+url.QueryEscape(input), nil)
 			w := httptest.NewRecorder()
 
 			// Should handle gracefully without panicking
