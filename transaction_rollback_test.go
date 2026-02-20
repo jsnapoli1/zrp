@@ -453,27 +453,30 @@ func TestECOImplementationRollback(t *testing.T) {
 	}
 
 	t.Run("BOMUpdateFailure_ShouldNotImplementECO", func(t *testing.T) {
-		tx, err := testDB.Begin()
-		if err != nil {
-			t.Fatalf("Failed to begin transaction: %v", err)
-		}
-		defer tx.Rollback()
+		// Perform the failing transaction
+		func() {
+			tx, err := testDB.Begin()
+			if err != nil {
+				t.Fatalf("Failed to begin transaction: %v", err)
+			}
+			defer tx.Rollback()
 
-		// Step 1: Update ECO status
-		_, err = tx.Exec("UPDATE ecos SET status = 'implemented', updated_at = datetime('now') WHERE id = ?", "ECO001")
-		if err != nil {
-			t.Fatalf("Failed to update ECO: %v", err)
-		}
+			// Step 1: Update ECO status
+			_, err = tx.Exec("UPDATE ecos SET status = 'implemented', updated_at = datetime('now') WHERE id = ?", "ECO001")
+			if err != nil {
+				t.Fatalf("Failed to update ECO: %v", err)
+			}
 
-		// Step 2: Try to update BOM with invalid data (negative qty violates CHECK)
-		_, err = tx.Exec("UPDATE bom SET qty = ? WHERE assembly_ipn = ?", -5.0, "ASM-100")
-		if err == nil {
-			t.Fatal("Expected negative BOM qty to fail CHECK constraint")
-		}
+			// Step 2: Try to update BOM with invalid data (negative qty violates CHECK)
+			_, err = tx.Exec("UPDATE bom SET qty = ? WHERE assembly_ipn = ?", -5.0, "ASM-100")
+			if err == nil {
+				t.Fatal("Expected negative BOM qty to fail CHECK constraint")
+			}
 
-		// Don't commit - let rollback happen
+			// Don't commit - let rollback happen
+		}()
 
-		// Verify ECO was not implemented
+		// Verify ECO was not implemented (after rollback completes)
 		var status string
 		err = testDB.QueryRow("SELECT status FROM ecos WHERE id = ?", "ECO001").Scan(&status)
 		if err != nil {
@@ -560,21 +563,24 @@ func TestMultiTableOperationRollback(t *testing.T) {
 	defer testDB.Close()
 
 	t.Run("ForeignKeyViolation_ShouldRollback", func(t *testing.T) {
-		tx, err := testDB.Begin()
-		if err != nil {
-			t.Fatalf("Failed to begin transaction: %v", err)
-		}
-		defer tx.Rollback()
+		// Perform the failing transaction
+		func() {
+			tx, err := testDB.Begin()
+			if err != nil {
+				t.Fatalf("Failed to begin transaction: %v", err)
+			}
+			defer tx.Rollback()
 
-		// Try to create PO line for non-existent PO (violates foreign key)
-		_, err = tx.Exec("INSERT INTO po_lines (po_id, ipn, qty_ordered) VALUES (?, ?, ?)", "PO999", "PART-001", 100)
-		if err == nil {
-			t.Fatal("Expected foreign key violation, but insert succeeded")
-		}
+			// Try to create PO line for non-existent PO (violates foreign key)
+			_, err = tx.Exec("INSERT INTO po_lines (po_id, ipn, qty_ordered) VALUES (?, ?, ?)", "PO999", "PART-001", 100)
+			if err == nil {
+				t.Fatal("Expected foreign key violation, but insert succeeded")
+			}
+		}()
 
-		// Verify no data was inserted
+		// Verify no data was inserted (after rollback completes)
 		var count int
-		err = testDB.QueryRow("SELECT COUNT(*) FROM po_lines WHERE po_id = ?", "PO999").Scan(&count)
+		err := testDB.QueryRow("SELECT COUNT(*) FROM po_lines WHERE po_id = ?", "PO999").Scan(&count)
 		if err != nil {
 			t.Fatalf("Failed to count po_lines: %v", err)
 		}
@@ -590,33 +596,36 @@ func TestMultiTableOperationRollback(t *testing.T) {
 			t.Fatalf("Failed to create vendor: %v", err)
 		}
 
-		tx, err := testDB.Begin()
-		if err != nil {
-			t.Fatalf("Failed to begin transaction: %v", err)
-		}
-		defer tx.Rollback()
+		// Perform the failing transaction
+		func() {
+			tx, err := testDB.Begin()
+			if err != nil {
+				t.Fatalf("Failed to begin transaction: %v", err)
+			}
+			defer tx.Rollback()
 
-		// Create PO
-		_, err = tx.Exec("INSERT INTO purchase_orders (id, vendor_id, status) VALUES ('PO100', 'V100', 'draft')")
-		if err != nil {
-			t.Fatalf("Failed to create PO: %v", err)
-		}
+			// Create PO
+			_, err = tx.Exec("INSERT INTO purchase_orders (id, vendor_id, status) VALUES ('PO100', 'V100', 'draft')")
+			if err != nil {
+				t.Fatalf("Failed to create PO: %v", err)
+			}
 
-		// Create first PO line - should succeed
-		_, err = tx.Exec("INSERT INTO po_lines (po_id, ipn, qty_ordered) VALUES ('PO100', 'PART-A', 10)")
-		if err != nil {
-			t.Fatalf("Failed to create first PO line: %v", err)
-		}
+			// Create first PO line - should succeed
+			_, err = tx.Exec("INSERT INTO po_lines (po_id, ipn, qty_ordered) VALUES ('PO100', 'PART-A', 10)")
+			if err != nil {
+				t.Fatalf("Failed to create first PO line: %v", err)
+			}
 
-		// Create second PO line with invalid qty (violates CHECK qty_ordered > 0)
-		_, err = tx.Exec("INSERT INTO po_lines (po_id, ipn, qty_ordered) VALUES ('PO100', 'PART-B', 0)")
-		if err == nil {
-			t.Fatal("Expected CHECK constraint violation for qty_ordered = 0")
-		}
+			// Create second PO line with invalid qty (violates CHECK qty_ordered > 0)
+			_, err = tx.Exec("INSERT INTO po_lines (po_id, ipn, qty_ordered) VALUES ('PO100', 'PART-B', 0)")
+			if err == nil {
+				t.Fatal("Expected CHECK constraint violation for qty_ordered = 0")
+			}
 
-		// Don't commit - let rollback happen
+			// Don't commit - let rollback happen
+		}()
 
-		// Verify entire transaction was rolled back
+		// Verify entire transaction was rolled back (after rollback completes)
 		var poCount int
 		err = testDB.QueryRow("SELECT COUNT(*) FROM purchase_orders WHERE id = ?", "PO100").Scan(&poCount)
 		if err != nil {
@@ -722,17 +731,18 @@ func TestConcurrentTransactionIsolation(t *testing.T) {
 
 	t.Run("IsolatedRollback_DoesNotAffectOtherTransactions", func(t *testing.T) {
 		// Transaction 1: Will fail and rollback
-		tx1, err := testDB.Begin()
-		if err != nil {
-			t.Fatalf("Failed to begin tx1: %v", err)
-		}
-		defer tx1.Rollback()
+		func() {
+			tx1, err := testDB.Begin()
+			if err != nil {
+				t.Fatalf("Failed to begin tx1: %v", err)
+			}
+			defer tx1.Rollback()
 
-		_, err = tx1.Exec("UPDATE inventory SET qty_on_hand = ? WHERE ipn = ?", -50.0, "PART-001")
-		if err == nil {
-			t.Fatal("Expected CHECK constraint violation in tx1")
-		}
-		tx1.Rollback()
+			_, err = tx1.Exec("UPDATE inventory SET qty_on_hand = ? WHERE ipn = ?", -50.0, "PART-001")
+			if err == nil {
+				t.Fatal("Expected CHECK constraint violation in tx1")
+			}
+		}()
 
 		// Transaction 2: Should succeed independently
 		tx2, err := testDB.Begin()
