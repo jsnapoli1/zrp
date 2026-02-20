@@ -56,6 +56,185 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to create sessions table: %v", err)
 	}
 
+	// Create capas table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS capas (
+			id TEXT PRIMARY KEY, title TEXT NOT NULL,
+			type TEXT DEFAULT 'corrective' CHECK(type IN ('corrective','preventive')),
+			linked_ncr_id TEXT DEFAULT '', linked_rma_id TEXT DEFAULT '',
+			root_cause TEXT DEFAULT '', action_plan TEXT DEFAULT '',
+			owner TEXT DEFAULT '', due_date TEXT DEFAULT '',
+			status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','pending_review','closed','cancelled')),
+			effectiveness_check TEXT DEFAULT '',
+			approved_by_qe TEXT DEFAULT '', approved_by_qe_at DATETIME,
+			approved_by_mgr TEXT DEFAULT '', approved_by_mgr_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create capas table: %v", err)
+	}
+
+	// Create sales_orders table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS sales_orders (
+			id TEXT PRIMARY KEY,
+			quote_id TEXT DEFAULT '',
+			customer TEXT NOT NULL,
+			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','confirmed','allocated','picked','shipped','invoiced','closed')),
+			notes TEXT DEFAULT '',
+			created_by TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create sales_orders table: %v", err)
+	}
+
+	// Create sales_order_lines table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS sales_order_lines (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			sales_order_id TEXT NOT NULL,
+			ipn TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			qty INTEGER NOT NULL CHECK(qty > 0),
+			qty_allocated INTEGER DEFAULT 0 CHECK(qty_allocated >= 0),
+			qty_picked INTEGER DEFAULT 0 CHECK(qty_picked >= 0),
+			qty_shipped INTEGER DEFAULT 0 CHECK(qty_shipped >= 0),
+			unit_price REAL DEFAULT 0 CHECK(unit_price >= 0),
+			notes TEXT DEFAULT '',
+			FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create sales_order_lines table: %v", err)
+	}
+
+	// Create quotes table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS quotes (
+			id TEXT PRIMARY KEY,
+			customer TEXT NOT NULL,
+			status TEXT DEFAULT 'draft',
+			notes TEXT DEFAULT '',
+			created_by TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create quotes table: %v", err)
+	}
+
+	// Create quote_lines table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS quote_lines (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quote_id TEXT NOT NULL,
+			ipn TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			qty INTEGER NOT NULL CHECK(qty > 0),
+			unit_price REAL DEFAULT 0 CHECK(unit_price >= 0),
+			notes TEXT DEFAULT '',
+			FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create quote_lines table: %v", err)
+	}
+
+	// Create invoices table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS invoices (
+			id TEXT PRIMARY KEY,
+			invoice_number TEXT NOT NULL UNIQUE,
+			sales_order_id TEXT NOT NULL,
+			customer TEXT NOT NULL,
+			issue_date DATE NOT NULL,
+			due_date DATE NOT NULL,
+			status TEXT DEFAULT 'draft' CHECK(status IN ('draft','sent','paid','overdue','cancelled')),
+			total REAL DEFAULT 0,
+			tax REAL DEFAULT 0,
+			notes TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			paid_at DATETIME,
+			FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE RESTRICT
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create invoices table: %v", err)
+	}
+
+	// Create invoice_lines table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS invoice_lines (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			invoice_id TEXT NOT NULL,
+			ipn TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL,
+			quantity INTEGER NOT NULL CHECK(quantity > 0),
+			unit_price REAL NOT NULL CHECK(unit_price >= 0),
+			total REAL NOT NULL CHECK(total >= 0),
+			FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create invoice_lines table: %v", err)
+	}
+
+	// Create inventory table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS inventory (
+			ipn TEXT PRIMARY KEY,
+			qty_on_hand REAL DEFAULT 0,
+			qty_reserved REAL DEFAULT 0,
+			location TEXT DEFAULT '',
+			reorder_point REAL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create inventory table: %v", err)
+	}
+
+	// Create ncrs table
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS ncrs (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			status TEXT DEFAULT 'open',
+			priority TEXT DEFAULT 'medium',
+			root_cause TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create ncrs table: %v", err)
+	}
+
+	// Create ecos table (for NCR integration tests)
+	_, err = testDB.Exec(`
+		CREATE TABLE IF NOT EXISTS ecos (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			status TEXT DEFAULT 'draft',
+			priority TEXT DEFAULT 'normal',
+			linked_ncr_id TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create ecos table: %v", err)
+	}
+
 	return testDB
 }
 
