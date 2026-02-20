@@ -646,8 +646,12 @@ func TestHandleBulkUpdateProductPricing(t *testing.T) {
 			var response map[string]interface{}
 			json.NewDecoder(w.Body).Decode(&response)
 
-			if int(response["updated"].(float64)) != len(ids) {
-				t.Errorf("Expected %d updated, got %v", len(ids), response["updated"])
+			updated, ok := response["updated"]
+			if !ok || updated == nil {
+				t.Fatalf("Response missing 'updated' field: %v", response)
+			}
+			if int(updated.(float64)) != len(ids) {
+				t.Errorf("Expected %d updated, got %v", len(ids), updated)
 			}
 
 			// Verify prices
