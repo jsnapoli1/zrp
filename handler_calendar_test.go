@@ -1,0 +1,806 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+func setupCalendarTestDB(t *testing.T) *sql.DB {
+	testDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open test DB: %v", err)
+	}
+
+	if _, err := testDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("Failed to enable foreign keys: %v", err)
+	}
+
+	// Create work_orders table
+	_, err = testDB.Exec(`
+		CREATE TABLE work_orders (
+			id TEXT PRIMARY KEY,
+			assembly_ipn TEXT NOT NULL,
+			qty INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
+			status TEXT DEFAULT 'draft',
+			priority TEXT DEFAULT 'normal',
+			notes TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			started_at DATETIME,
+			completed_at DATETIME
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create work_orders table: %v", err)
+	}
+
+	// Create purchase_orders table
+	_, err = testDB.Exec(`
+		CREATE TABLE purchase_orders (
+			id TEXT PRIMARY KEY,
+			vendor_id TEXT NOT NULL,
+			status TEXT DEFAULT 'draft',
+			notes TEXT,
+			created_by TEXT DEFAULT '',
+			total REAL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expected_date DATE,
+			received_at DATETIME
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create purchase_orders table: %v", err)
+	}
+
+	// Create quotes table
+	_, err = testDB.Exec(`
+		CREATE TABLE quotes (
+			id TEXT PRIMARY KEY,
+			customer TEXT NOT NULL,
+			status TEXT DEFAULT 'draft',
+			notes TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			valid_until DATE,
+			accepted_at DATETIME
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create quotes table: %v", err)
+	}
+
+	return testDB
+}
+
+func TestHandleCalendar_CurrentMonth(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+
+	// Insert work order for current month
+	woDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-001", "ASM-001", 10, woDate.Format("2006-01-02 15:04:05"))
+	if err != nil {
+		t.Fatalf("Failed to insert work order: %v", err)
+	}
+
+	// Insert PO for current month
+	poDate := time.Date(year, time.Month(month), 20, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	_, err = db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date, notes) VALUES (?, ?, ?, ?)`,
+		"PO-001", "V001", poDate, "Test PO")
+	if err != nil {
+		t.Fatalf("Failed to insert purchase order: %v", err)
+	}
+
+	// Insert quote for current month
+	quoteDate := time.Date(year, time.Month(month), 25, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	_, err = db.Exec(`INSERT INTO quotes (id, customer, valid_until) VALUES (?, ?, ?)`,
+		"Q-001", "Acme Corp", quoteDate)
+	if err != nil {
+		t.Fatalf("Failed to insert quote: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+
+	handleCalendar(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var events []CalendarEvent
+	if err := json.NewDecoder(w.Body).Decode(&events); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(events) != 3 {
+		t.Errorf("Expected 3 events for current month, got %d", len(events))
+	}
+
+	// Verify event types
+	types := make(map[string]int)
+	for _, e := range events {
+		types[e.Type]++
+	}
+	if types["workorder"] != 1 || types["po"] != 1 || types["quote"] != 1 {
+		t.Errorf("Expected 1 of each type, got %v", types)
+	}
+}
+
+func TestHandleCalendar_SpecificMonth(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	// Insert work order for March 2026
+	woDate := "2026-03-15 10:00:00"
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-MARCH", "ASM-MARCH", 5, woDate)
+	if err != nil {
+		t.Fatalf("Failed to insert work order: %v", err)
+	}
+
+	// Insert work order for April 2026 (should not appear)
+	woDateApril := "2026-04-15 10:00:00"
+	_, err = db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-APRIL", "ASM-APRIL", 3, woDateApril)
+	if err != nil {
+		t.Fatalf("Failed to insert work order: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar?year=2026&month=3", nil)
+	w := httptest.NewRecorder()
+
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event for March 2026, got %d", len(events))
+	}
+
+	if len(events) > 0 && events[0].ID != "WO-MARCH" {
+		t.Errorf("Expected WO-MARCH, got %s", events[0].ID)
+	}
+}
+
+func TestHandleCalendar_Empty(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	req := httptest.NewRequest("GET", "/api/calendar?year=2025&month=1", nil)
+	w := httptest.NewRecorder()
+
+	handleCalendar(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 0 {
+		t.Errorf("Expected empty array for month with no events, got %d", len(events))
+	}
+}
+
+func TestHandleCalendar_WorkOrderWithNotes(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	woDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+
+	// Insert work order with notes
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, notes, completed_at) VALUES (?, ?, ?, ?, ?)`,
+		"WO-WITH-NOTES", "ASM-001", 10, "Custom build for customer", woDate.Format("2006-01-02 15:04:05"))
+	if err != nil {
+		t.Fatalf("Failed to insert work order: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(events))
+	}
+
+	// Title should use notes if present
+	if events[0].Title != "Custom build for customer" {
+		t.Errorf("Expected title to use notes, got '%s'", events[0].Title)
+	}
+}
+
+func TestHandleCalendar_WorkOrderWithoutNotes(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	woDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+
+	// Insert work order without notes
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-NO-NOTES", "ASM-123", 25, woDate.Format("2006-01-02 15:04:05"))
+	if err != nil {
+		t.Fatalf("Failed to insert work order: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(events))
+	}
+
+	// Title should be "Build ASM-123 ×25"
+	expected := "Build ASM-123 ×25"
+	if events[0].Title != expected {
+		t.Errorf("Expected title '%s', got '%s'", expected, events[0].Title)
+	}
+}
+
+func TestHandleCalendar_WorkOrderEstimatedDueDate(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	// Insert work order without completed_at (should use created_at + 30 days)
+	createdDate := "2026-03-01 10:00:00"
+	_, err := db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, created_at) VALUES (?, ?, ?, ?)`,
+		"WO-ESTIMATED", "ASM-EST", 10, createdDate)
+	if err != nil {
+		t.Fatalf("Failed to insert work order: %v", err)
+	}
+
+	// Request March 2026 (should not appear) and April 2026 (estimated date is March 31)
+	req := httptest.NewRequest("GET", "/api/calendar?year=2026&month=3", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// The estimated due date is March 1 + 30 days = March 31, which is in March
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event for estimated due date in March, got %d", len(events))
+	}
+
+	if len(events) > 0 && events[0].ID != "WO-ESTIMATED" {
+		t.Errorf("Expected WO-ESTIMATED, got %s", events[0].ID)
+	}
+}
+
+func TestHandleCalendar_POWithNotes(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	poDate := time.Date(year, time.Month(month), 20, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+
+	// Insert PO with notes
+	_, err := db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date, notes) VALUES (?, ?, ?, ?)`,
+		"PO-WITH-NOTES", "V001", poDate, "Urgent parts delivery")
+	if err != nil {
+		t.Fatalf("Failed to insert purchase order: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// Find PO event
+	var poEvent *CalendarEvent
+	for i := range events {
+		if events[i].Type == "po" {
+			poEvent = &events[i]
+			break
+		}
+	}
+
+	if poEvent == nil {
+		t.Fatal("Expected PO event")
+	}
+
+	// Title should use notes
+	if poEvent.Title != "Urgent parts delivery" {
+		t.Errorf("Expected title to use notes, got '%s'", poEvent.Title)
+	}
+}
+
+func TestHandleCalendar_POWithoutNotes(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	poDate := time.Date(year, time.Month(month), 20, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+
+	// Insert PO without notes
+	_, err := db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date) VALUES (?, ?, ?)`,
+		"PO-NO-NOTES", "V002", poDate)
+	if err != nil {
+		t.Fatalf("Failed to insert purchase order: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// Find PO event
+	var poEvent *CalendarEvent
+	for i := range events {
+		if events[i].Type == "po" {
+			poEvent = &events[i]
+			break
+		}
+	}
+
+	if poEvent == nil {
+		t.Fatal("Expected PO event")
+	}
+
+	// Title should be default "PO expected delivery"
+	if poEvent.Title != "PO expected delivery" {
+		t.Errorf("Expected default title, got '%s'", poEvent.Title)
+	}
+}
+
+func TestHandleCalendar_QuoteWithCustomer(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	quoteDate := time.Date(year, time.Month(month), 25, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+
+	// Insert quote with customer
+	_, err := db.Exec(`INSERT INTO quotes (id, customer, valid_until) VALUES (?, ?, ?)`,
+		"Q-001", "Tech Industries", quoteDate)
+	if err != nil {
+		t.Fatalf("Failed to insert quote: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// Find quote event
+	var quoteEvent *CalendarEvent
+	for i := range events {
+		if events[i].Type == "quote" {
+			quoteEvent = &events[i]
+			break
+		}
+	}
+
+	if quoteEvent == nil {
+		t.Fatal("Expected quote event")
+	}
+
+	// Title should include customer
+	expected := "Quote for Tech Industries expires"
+	if quoteEvent.Title != expected {
+		t.Errorf("Expected title '%s', got '%s'", expected, quoteEvent.Title)
+	}
+}
+
+func TestHandleCalendar_QuoteWithoutCustomer(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	quoteDate := time.Date(year, time.Month(month), 25, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+
+	// Insert quote without customer
+	_, err := db.Exec(`INSERT INTO quotes (id, customer, valid_until) VALUES (?, ?, ?)`,
+		"Q-002", "", quoteDate)
+	if err != nil {
+		t.Fatalf("Failed to insert quote: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// Find quote event
+	var quoteEvent *CalendarEvent
+	for i := range events {
+		if events[i].Type == "quote" {
+			quoteEvent = &events[i]
+			break
+		}
+	}
+
+	if quoteEvent == nil {
+		t.Fatal("Expected quote event")
+	}
+
+	// Title should be "Quote Q-002 expires"
+	expected := "Quote Q-002 expires"
+	if quoteEvent.Title != expected {
+		t.Errorf("Expected title '%s', got '%s'", expected, quoteEvent.Title)
+	}
+}
+
+func TestHandleCalendar_EventColors(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	eventDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+
+	// Insert one of each type
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-001", "ASM-001", 10, eventDate.Format("2006-01-02 15:04:05"))
+
+	db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date) VALUES (?, ?, ?)`,
+		"PO-001", "V001", eventDate.Format("2006-01-02"))
+
+	db.Exec(`INSERT INTO quotes (id, customer, valid_until) VALUES (?, ?, ?)`,
+		"Q-001", "Customer", eventDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 3 {
+		t.Fatalf("Expected 3 events, got %d", len(events))
+	}
+
+	// Verify colors
+	colorMap := make(map[string]string)
+	for _, e := range events {
+		colorMap[e.Type] = e.Color
+	}
+
+	expectedColors := map[string]string{
+		"workorder": "blue",
+		"po":        "green",
+		"quote":     "orange",
+	}
+
+	for eType, expectedColor := range expectedColors {
+		if colorMap[eType] != expectedColor {
+			t.Errorf("Expected %s color '%s', got '%s'", eType, expectedColor, colorMap[eType])
+		}
+	}
+}
+
+func TestHandleCalendar_DateFormatting(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+
+	// Insert work order with full timestamp
+	woDate := time.Date(year, time.Month(month), 15, 14, 30, 45, 0, time.UTC)
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-001", "ASM-001", 10, woDate.Format("2006-01-02 15:04:05"))
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(events))
+	}
+
+	// Date should be formatted as YYYY-MM-DD (first 10 chars)
+	expectedDate := woDate.Format("2006-01-02")
+	if events[0].Date != expectedDate {
+		t.Errorf("Expected date '%s', got '%s'", expectedDate, events[0].Date)
+	}
+}
+
+func TestHandleCalendar_DateRangeQuery(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	// Insert events at beginning, middle, and end of March 2026
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-START", "ASM-001", 10, "2026-03-01 10:00:00")
+
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-MID", "ASM-002", 10, "2026-03-15 10:00:00")
+
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-END", "ASM-003", 10, "2026-03-31 10:00:00")
+
+	// Insert event just before March (should not appear)
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-BEFORE", "ASM-004", 10, "2026-02-28 23:59:59")
+
+	// Insert event just after March (should not appear)
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-AFTER", "ASM-005", 10, "2026-04-01 00:00:01")
+
+	req := httptest.NewRequest("GET", "/api/calendar?year=2026&month=3", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 3 {
+		t.Errorf("Expected 3 events in March, got %d", len(events))
+	}
+
+	// Verify all are from March
+	for _, e := range events {
+		if !strings.HasPrefix(e.Date, "2026-03") {
+			t.Errorf("Event should be from March 2026, got date '%s'", e.Date)
+		}
+	}
+}
+
+func TestHandleCalendar_MultipleEventsPerDay(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	sameDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+
+	// Insert multiple events on same day
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-001", "ASM-001", 10, sameDate.Format("2006-01-02 15:04:05"))
+
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-002", "ASM-002", 5, sameDate.Format("2006-01-02 15:04:05"))
+
+	db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date) VALUES (?, ?, ?)`,
+		"PO-001", "V001", sameDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 3 {
+		t.Errorf("Expected 3 events on same day, got %d", len(events))
+	}
+
+	// All should have same date
+	expectedDate := sameDate.Format("2006-01-02")
+	for _, e := range events {
+		if e.Date != expectedDate {
+			t.Errorf("Expected all events to have date '%s', got '%s'", expectedDate, e.Date)
+		}
+	}
+}
+
+func TestHandleCalendar_InvalidMonth(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	// Test with invalid month (should handle gracefully)
+	req := httptest.NewRequest("GET", "/api/calendar?year=2026&month=13", nil)
+	w := httptest.NewRecorder()
+
+	handleCalendar(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200 even with invalid month, got %d", w.Code)
+	}
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// Should return events for month 13 which SQLite will handle
+	if len(events) != 0 {
+		t.Logf("Got %d events for month 13 (handled by SQLite)", len(events))
+	}
+}
+
+func TestHandleCalendar_EventAggregation(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+
+	// Insert 10 work orders
+	for i := 1; i <= 10; i++ {
+		eventDate := time.Date(year, time.Month(month), i, 10, 0, 0, 0, time.UTC)
+		db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+			"WO-"+string(rune(i+48)), "ASM-001", 10, eventDate.Format("2006-01-02 15:04:05"))
+	}
+
+	// Insert 5 POs
+	for i := 1; i <= 5; i++ {
+		eventDate := time.Date(year, time.Month(month), i+10, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date) VALUES (?, ?, ?)`,
+			"PO-"+string(rune(i+48)), "V001", eventDate)
+	}
+
+	// Insert 3 quotes
+	for i := 1; i <= 3; i++ {
+		eventDate := time.Date(year, time.Month(month), i+20, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		db.Exec(`INSERT INTO quotes (id, customer, valid_until) VALUES (?, ?, ?)`,
+			"Q-"+string(rune(i+48)), "Customer", eventDate)
+	}
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 18 {
+		t.Errorf("Expected 18 total events (10 WO + 5 PO + 3 quotes), got %d", len(events))
+	}
+
+	// Count by type
+	counts := make(map[string]int)
+	for _, e := range events {
+		counts[e.Type]++
+	}
+
+	if counts["workorder"] != 10 {
+		t.Errorf("Expected 10 work orders, got %d", counts["workorder"])
+	}
+	if counts["po"] != 5 {
+		t.Errorf("Expected 5 POs, got %d", counts["po"])
+	}
+	if counts["quote"] != 3 {
+		t.Errorf("Expected 3 quotes, got %d", counts["quote"])
+	}
+}
+
+func TestHandleCalendar_DefaultsToCurrentMonth(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+
+	// Insert event in current month
+	eventDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-CURRENT", "ASM-001", 10, eventDate.Format("2006-01-02 15:04:05"))
+
+	// Request without year/month params (should default to current)
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event in current month, got %d", len(events))
+	}
+}
+
+func TestHandleCalendar_EventRecordIDPopulated(t *testing.T) {
+	oldDB := db
+	defer func() { db = oldDB }()
+	db = setupCalendarTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+	eventDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
+
+	db.Exec(`INSERT INTO work_orders (id, assembly_ipn, qty, completed_at) VALUES (?, ?, ?, ?)`,
+		"WO-123", "ASM-001", 10, eventDate.Format("2006-01-02 15:04:05"))
+
+	db.Exec(`INSERT INTO purchase_orders (id, vendor_id, expected_date) VALUES (?, ?, ?)`,
+		"PO-456", "V001", eventDate.Format("2006-01-02"))
+
+	db.Exec(`INSERT INTO quotes (id, customer, valid_until) VALUES (?, ?, ?)`,
+		"Q-789", "Customer", eventDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("GET", "/api/calendar", nil)
+	w := httptest.NewRecorder()
+	handleCalendar(w, req)
+
+	var events []CalendarEvent
+	json.NewDecoder(w.Body).Decode(&events)
+
+	// Verify each event has correct ID
+	idMap := make(map[string]string)
+	for _, e := range events {
+		idMap[e.Type] = e.ID
+	}
+
+	if idMap["workorder"] != "WO-123" {
+		t.Errorf("Work order ID should be 'WO-123', got '%s'", idMap["workorder"])
+	}
+	if idMap["po"] != "PO-456" {
+		t.Errorf("PO ID should be 'PO-456', got '%s'", idMap["po"])
+	}
+	if idMap["quote"] != "Q-789" {
+		t.Errorf("Quote ID should be 'Q-789', got '%s'", idMap["quote"])
+	}
+}
