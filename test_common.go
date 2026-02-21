@@ -600,6 +600,17 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to create eco_revisions table: %v", err)
 	}
 
+	// Seed default admin user with password "changeme" (matching production)
+	hash, err := bcrypt.GenerateFromPassword([]byte("changeme"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("Failed to hash admin password: %v", err)
+	}
+	_, err = testDB.Exec(`INSERT INTO users (username, password_hash, display_name, role) VALUES (?, ?, ?, ?)`,
+		"admin", string(hash), "Administrator", "admin")
+	if err != nil {
+		t.Fatalf("Failed to create default admin user: %v", err)
+	}
+
 	return testDB
 }
 
@@ -646,10 +657,14 @@ func createTestSessionSimple(t *testing.T, db *sql.DB, userID int) string {
 	return token
 }
 
-// loginAdmin creates an admin user and returns their session token
+// loginAdmin returns a session token for the default admin user (created by setupTestDB)
 func loginAdmin(t *testing.T, db *sql.DB) string {
 	t.Helper()
-	adminID := createTestUser(t, db, "admin", "password", "admin", true)
+	var adminID int
+	err := db.QueryRow("SELECT id FROM users WHERE username = 'admin'").Scan(&adminID)
+	if err != nil {
+		t.Fatalf("Failed to find admin user: %v", err)
+	}
 	return createTestSessionSimple(t, db, adminID)
 }
 
