@@ -7,140 +7,30 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
+
+	"zrp/internal/handlers/admin"
 )
 
 // SMTPSendFunc is the function used to send emails. Override in tests.
 var SMTPSendFunc = smtp.SendMail
 
-type EmailConfig struct {
-	ID           int    `json:"id"`
-	SMTPHost     string `json:"smtp_host"`
-	SMTPPort     int    `json:"smtp_port"`
-	SMTPUser     string `json:"smtp_user"`
-	SMTPPassword string `json:"smtp_password"`
-	FromAddress  string `json:"from_address"`
-	FromName     string `json:"from_name"`
-	Enabled      int    `json:"enabled"`
-}
-
-type EmailLogEntry struct {
-	ID        int    `json:"id"`
-	To        string `json:"to_address"`
-	Subject   string `json:"subject"`
-	Body      string `json:"body"`
-	EventType string `json:"event_type"`
-	Status    string `json:"status"`
-	Error     string `json:"error"`
-	SentAt    string `json:"sent_at"`
-}
-
-type EmailSubscription struct {
-	ID        int    `json:"id"`
-	UserID    string `json:"user_id"`
-	EventType string `json:"event_type"`
-	Enabled   int    `json:"enabled"`
-}
-
-// All supported email event types
-var EmailEventTypes = []string{
-	"eco_approved",
-	"eco_implemented",
-	"low_stock",
-	"overdue_work_order",
-	"po_received",
-	"ncr_created",
-}
+// All supported email event types (alias from admin package).
+var EmailEventTypes = admin.EmailEventTypes
 
 func handleGetEmailConfig(w http.ResponseWriter, r *http.Request) {
-	var c EmailConfig
-	err := db.QueryRow("SELECT id, COALESCE(smtp_host,''), COALESCE(smtp_port,587), COALESCE(smtp_user,''), COALESCE(smtp_password,''), COALESCE(from_address,''), COALESCE(from_name,'ZRP'), enabled FROM email_config WHERE id=1").
-		Scan(&c.ID, &c.SMTPHost, &c.SMTPPort, &c.SMTPUser, &c.SMTPPassword, &c.FromAddress, &c.FromName, &c.Enabled)
-	if err != nil {
-		jsonResp(w, EmailConfig{ID: 1, SMTPPort: 587, FromName: "ZRP"})
-		return
-	}
-	if c.SMTPPassword != "" {
-		c.SMTPPassword = "****"
-	}
-	jsonResp(w, c)
+	getAdminHandler().HandleGetEmailConfig(w, r)
 }
 
 func handleUpdateEmailConfig(w http.ResponseWriter, r *http.Request) {
-	var c EmailConfig
-	if err := decodeBody(r, &c); err != nil {
-		jsonErr(w, "invalid body", 400)
-		return
-	}
-
-	if c.SMTPPassword == "****" {
-		var existing string
-		db.QueryRow("SELECT COALESCE(smtp_password,'') FROM email_config WHERE id=1").Scan(&existing)
-		c.SMTPPassword = existing
-	}
-
-	if c.SMTPPort <= 0 {
-		c.SMTPPort = 587
-	}
-
-	_, err := db.Exec(`INSERT OR REPLACE INTO email_config (id, smtp_host, smtp_port, smtp_user, smtp_password, from_address, from_name, enabled)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SMTPHost, c.SMTPPort, c.SMTPUser, c.SMTPPassword, c.FromAddress, c.FromName, c.Enabled)
-	if err != nil {
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	logAudit(db, getUsername(r), "updated", "email_config", "1", "Updated email configuration")
-	c.ID = 1
-	if c.SMTPPassword != "" {
-		c.SMTPPassword = "****"
-	}
-	jsonResp(w, c)
+	getAdminHandler().HandleUpdateEmailConfig(w, r)
 }
 
 func handleTestEmail(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		To        string `json:"to"`
-		TestEmail string `json:"test_email"`
-	}
-	if err := decodeBody(r, &body); err != nil {
-		jsonErr(w, "invalid request body", 400)
-		return
-	}
-	// Support both "to" and "test_email" field names
-	if body.To == "" {
-		body.To = body.TestEmail
-	}
-	if body.To == "" {
-		jsonErr(w, "to address required", 400)
-		return
-	}
-
-	logAudit(db, getUsername(r), "test_email", "email_config", "1", "Test email to "+body.To)
-
-	if err := sendEmail(body.To, "ZRP Test Email", "This is a test email from ZRP. If you received this, email notifications are configured correctly."); err != nil {
-		jsonErr(w, "send failed: "+err.Error(), 500)
-		return
-	}
-	jsonResp(w, map[string]string{"status": "sent", "to": body.To})
+	getAdminHandler().HandleTestEmail(w, r)
 }
 
 func handleListEmailLog(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, to_address, subject, COALESCE(body,''), COALESCE(event_type,''), status, COALESCE(error,''), sent_at FROM email_log ORDER BY sent_at DESC LIMIT 100")
-	if err != nil {
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	defer rows.Close()
-	var items []EmailLogEntry
-	for rows.Next() {
-		var e EmailLogEntry
-		rows.Scan(&e.ID, &e.To, &e.Subject, &e.Body, &e.EventType, &e.Status, &e.Error, &e.SentAt)
-		items = append(items, e)
-	}
-	if items == nil {
-		items = []EmailLogEntry{}
-	}
-	jsonResp(w, items)
+	getAdminHandler().HandleListEmailLog(w, r)
 }
 
 func getEmailConfig() (*EmailConfig, error) {
@@ -262,42 +152,11 @@ func isValidEmail(email string) bool {
 // --- Subscription management ---
 
 func handleGetEmailSubscriptions(w http.ResponseWriter, r *http.Request) {
-	username := getUsername(r)
-	subs := make(map[string]bool)
-	// Default all event types to enabled
-	for _, et := range EmailEventTypes {
-		subs[et] = true
-	}
-	rows, err := db.Query("SELECT event_type, enabled FROM email_subscriptions WHERE user_id=?", username)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var eventType string
-			var enabled int
-			rows.Scan(&eventType, &enabled)
-			subs[eventType] = enabled == 1
-		}
-	}
-	jsonResp(w, subs)
+	getAdminHandler().HandleGetEmailSubscriptions(w, r)
 }
 
 func handleUpdateEmailSubscriptions(w http.ResponseWriter, r *http.Request) {
-	username := getUsername(r)
-	var body map[string]bool
-	if err := decodeBody(r, &body); err != nil {
-		jsonErr(w, "invalid body", 400)
-		return
-	}
-	for eventType, enabled := range body {
-		enabledInt := 0
-		if enabled {
-			enabledInt = 1
-		}
-		db.Exec("INSERT OR REPLACE INTO email_subscriptions (user_id, event_type, enabled) VALUES (?, ?, ?)",
-			username, eventType, enabledInt)
-	}
-	logAudit(db, username, "updated", "email_subscriptions", username, "Updated email subscriptions")
-	handleGetEmailSubscriptions(w, r)
+	getAdminHandler().HandleUpdateEmailSubscriptions(w, r)
 }
 
 // isUserSubscribed checks if a user has opted out of a specific event type.
@@ -331,11 +190,9 @@ func emailOnECOApproved(ecoID string) {
 	if err != nil {
 		return
 	}
-	// Look up user email (from_address as fallback)
 	var userEmail string
 	db.QueryRow("SELECT COALESCE(email,'') FROM users WHERE username=?", createdBy).Scan(&userEmail)
 	if userEmail == "" {
-		// fallback to admin from_address
 		c, err := getEmailConfig()
 		if err != nil {
 			return

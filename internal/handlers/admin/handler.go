@@ -14,6 +14,7 @@ import (
 	"zrp/internal/audit"
 	"zrp/internal/auth"
 	"zrp/internal/response"
+	"zrp/internal/server"
 	"zrp/internal/validation"
 	"zrp/internal/websocket"
 
@@ -25,6 +26,34 @@ type Handler struct {
 	DB       *sql.DB
 	Hub      *websocket.Hub
 	Profiler QueryProfiler
+
+	// Backup function fields (root-package functions that can't be imported).
+	PerformBackup  func() error
+	ListBackups    func() ([]BackupInfo, error)
+	CleanOldBackups func()
+	DBFilePath     func() string
+	SetDBFilePath  func(string)
+	InitDB         func(string) error
+
+	// Email function fields.
+	SendEmail            func(to, subject, body string) error
+	SendEmailWithEvent   func(to, subject, body, eventType string) error
+	GetEmailConfig       func() (*EmailConfig, error)
+	EmailConfigEnabled   func() bool
+	IsValidEmail         func(email string) bool
+	SendEventEmail       func(to, subject, body, eventType, username string) error
+	IsUserSubscribed     func(username, eventType string) bool
+
+	// Auth function fields.
+	CheckLoginRateLimit          func(ip string) bool
+	IsAccountLocked              func(username string) (bool, error)
+	IncrementFailedLoginAttempts func(username string) error
+	ResetFailedLoginAttempts     func(username string) error
+	GenerateToken                func() string
+
+	// Permission function fields.
+	SetRolePermissions func(dbConn *sql.DB, role string, perms []auth.PermissionEntry) error
+	GetRolePermissions func(role string) []auth.PermissionEntry
 }
 
 // QueryProfiler interface for the profiler dependency.
@@ -114,6 +143,67 @@ type DashboardWidget struct {
 	WidgetType string `json:"widget_type"`
 	Position   int    `json:"position"`
 	Enabled    int    `json:"enabled"`
+}
+
+// BackupInfo represents a backup file entry.
+type BackupInfo struct {
+	Filename  string `json:"filename"`
+	Size      int64  `json:"size"`
+	CreatedAt string `json:"created_at"`
+}
+
+// EmailConfig represents the email configuration.
+type EmailConfig struct {
+	ID           int    `json:"id"`
+	SMTPHost     string `json:"smtp_host"`
+	SMTPPort     int    `json:"smtp_port"`
+	SMTPUser     string `json:"smtp_user"`
+	SMTPPassword string `json:"smtp_password"`
+	FromAddress  string `json:"from_address"`
+	FromName     string `json:"from_name"`
+	Enabled      int    `json:"enabled"`
+}
+
+// EmailLogEntry represents an email log record.
+type EmailLogEntry struct {
+	ID        int    `json:"id"`
+	To        string `json:"to_address"`
+	Subject   string `json:"subject"`
+	Body      string `json:"body"`
+	EventType string `json:"event_type"`
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+	SentAt    string `json:"sent_at"`
+}
+
+// LoginRequest represents a login request.
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// UserResponse represents a user response (for auth endpoints).
+type UserResponse struct {
+	ID          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+}
+
+// CtxUserID and CtxRole are re-exported context keys.
+var (
+	CtxUserID = server.CtxUserID
+	CtxRole   = server.CtxRole
+)
+
+// EmailEventTypes lists all supported email event types.
+var EmailEventTypes = []string{
+	"eco_approved",
+	"eco_implemented",
+	"low_stock",
+	"overdue_work_order",
+	"po_received",
+	"ncr_created",
 }
 
 // --- User handlers ---

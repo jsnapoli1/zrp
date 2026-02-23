@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,16 +13,10 @@ import (
 )
 
 var (
-	backupDir     = "backups"
-	backupMu      sync.Mutex
+	backupDir       = "backups"
+	backupMu        sync.Mutex
 	backupRetention = 7
 )
-
-type BackupInfo struct {
-	Filename  string `json:"filename"`
-	Size      int64  `json:"size"`
-	CreatedAt string `json:"created_at"`
-}
 
 func startAutoBackup(backupTime string) {
 	hour, min := 2, 0
@@ -142,109 +135,21 @@ func listBackups() ([]BackupInfo, error) {
 }
 
 func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
-	if err := performBackup(); err != nil {
-		jsonErr(w, fmt.Sprintf("Backup failed: %v", err), 500)
-		return
-	}
-	jsonResp(w, map[string]string{"status": "ok", "message": "Backup created"})
+	getAdminHandler().HandleCreateBackup(w, r)
 }
 
 func handleListBackups(w http.ResponseWriter, r *http.Request) {
-	backups, err := listBackups()
-	if err != nil {
-		jsonErr(w, fmt.Sprintf("Failed to list backups: %v", err), 500)
-		return
-	}
-	jsonResp(w, backups)
+	getAdminHandler().HandleListBackups(w, r)
 }
 
 func handleDeleteBackup(w http.ResponseWriter, r *http.Request, filename string) {
-	if strings.Contains(filename, "/") || strings.Contains(filename, "..") {
-		jsonErr(w, "Invalid filename", 400)
-		return
-	}
-
-	path := filepath.Join(backupDir, filename)
-	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			jsonErr(w, "Backup not found", 404)
-		} else {
-			jsonErr(w, fmt.Sprintf("Failed to delete: %v", err), 500)
-		}
-		return
-	}
-	jsonResp(w, map[string]string{"status": "ok"})
+	getAdminHandler().HandleDeleteBackup(w, r, filename)
 }
 
 func handleDownloadBackup(w http.ResponseWriter, r *http.Request, filename string) {
-	if strings.Contains(filename, "/") || strings.Contains(filename, "..") {
-		http.Error(w, "Invalid filename", 400)
-		return
-	}
-
-	path := filepath.Join(backupDir, filename)
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-		} else {
-			http.Error(w, "Failed to open backup", 500)
-		}
-		return
-	}
-	defer f.Close()
-
-	info, _ := f.Stat()
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
-	io.Copy(w, f)
+	getAdminHandler().HandleDownloadBackup(w, r, filename)
 }
 
 func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Filename string `json:"filename"`
-	}
-	if err := decodeBody(r, &req); err != nil || req.Filename == "" {
-		jsonErr(w, "filename is required", 400)
-		return
-	}
-
-	if strings.Contains(req.Filename, "/") || strings.Contains(req.Filename, "..") {
-		jsonErr(w, "Invalid filename", 400)
-		return
-	}
-
-	backupPath := filepath.Join(backupDir, req.Filename)
-	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-		jsonErr(w, "Backup not found", 404)
-		return
-	}
-
-	// Create a pre-restore backup first
-	if err := performBackup(); err != nil {
-		log.Printf("Warning: pre-restore backup failed: %v", err)
-	}
-
-	// Read backup file
-	data, err := os.ReadFile(backupPath)
-	if err != nil {
-		jsonErr(w, fmt.Sprintf("Failed to read backup: %v", err), 500)
-		return
-	}
-
-	// Write over current database file
-	if err := os.WriteFile(dbFilePath, data, 0644); err != nil {
-		jsonErr(w, fmt.Sprintf("Failed to restore: %v", err), 500)
-		return
-	}
-
-	// Reopen database connection
-	db.Close()
-	if err := initDB(dbFilePath); err != nil {
-		jsonErr(w, fmt.Sprintf("Failed to reopen DB after restore: %v", err), 500)
-		return
-	}
-
-	jsonResp(w, map[string]string{"status": "ok", "message": "Database restored from " + req.Filename})
+	getAdminHandler().HandleRestoreBackup(w, r)
 }
