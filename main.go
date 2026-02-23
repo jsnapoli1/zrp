@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"zrp/internal/response"
 )
 
 var partsDir string
@@ -815,19 +817,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	jsonResp(w, map[string]string{"gitplm_ui_url": gitplmUIURL})
 }
 
-func jsonResp(w http.ResponseWriter, data interface{}) {
-	json.NewEncoder(w).Encode(APIResponse{Data: data})
-}
-
-func jsonRespMeta(w http.ResponseWriter, data interface{}, total, page, limit int) {
-	json.NewEncoder(w).Encode(APIResponse{Data: data, Meta: &Meta{Total: total, Page: page, Limit: limit}})
-}
-
-func jsonErr(w http.ResponseWriter, msg string, code int) {
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
-
-func decodeBody(r *http.Request, v interface{}) error {
-	return json.NewDecoder(r.Body).Decode(v)
-}
+// Wrapper functions that delegate to internal/response for backward compatibility.
+func jsonResp(w http.ResponseWriter, data interface{})                          { response.JSON(w, data) }
+func jsonRespMeta(w http.ResponseWriter, data interface{}, total, page, limit int) { response.JSONMeta(w, data, total, page, limit) }
+func jsonErr(w http.ResponseWriter, msg string, code int)                       { response.Err(w, msg, code) }
+func decodeBody(r *http.Request, v interface{}) error                           { return response.DecodeBody(r, v) }
