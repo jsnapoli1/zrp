@@ -501,4 +501,68 @@ type CAPA struct {
 	UpdatedAt          string  `json:"updated_at"`
 }
 
+// PriceHistory represents a vendor price history entry.
+type PriceHistory struct {
+	ID           int     `json:"id"`
+	IPN          string  `json:"ipn"`
+	VendorID     *string `json:"vendor_id"`
+	VendorName   *string `json:"vendor_name"`
+	UnitPrice    float64 `json:"unit_price"`
+	Currency     string  `json:"currency"`
+	MinQty       int     `json:"min_qty"`
+	LeadTimeDays *int    `json:"lead_time_days"`
+	POID         *string `json:"po_id"`
+	RecordedAt   string  `json:"recorded_at"`
+	Notes        *string `json:"notes"`
+}
+
+// PriceTrendPoint represents a single point in a price trend chart.
+type PriceTrendPoint struct {
+	Date   string  `json:"date"`
+	Price  float64 `json:"price"`
+	Vendor string  `json:"vendor"`
+}
+
+// ReceivingInspection represents an inspection record for received goods.
+type ReceivingInspection struct {
+	ID          int     `json:"id"`
+	POID        string  `json:"po_id"`
+	POLineID    int     `json:"po_line_id"`
+	IPN         string  `json:"ipn"`
+	QtyReceived float64 `json:"qty_received"`
+	QtyPassed   float64 `json:"qty_passed"`
+	QtyFailed   float64 `json:"qty_failed"`
+	QtyOnHold   float64 `json:"qty_on_hold"`
+	Inspector   string  `json:"inspector"`
+	InspectedAt *string `json:"inspected_at"`
+	Notes       string  `json:"notes"`
+	CreatedAt   string  `json:"created_at"`
+}
+
+// Attachment represents a file attachment linked to a module record.
+type Attachment struct {
+	ID           int    `json:"id"`
+	Module       string `json:"module"`
+	RecordID     string `json:"record_id"`
+	Filename     string `json:"filename"`
+	OriginalName string `json:"original_name"`
+	SizeBytes    int64  `json:"size_bytes"`
+	MimeType     string `json:"mime_type"`
+	UploadedBy   string `json:"uploaded_by"`
+	CreatedAt    string `json:"created_at"`
+}
+
+// CostAnalysisWithPricing extends CostAnalysis with a selling price.
+type CostAnalysisWithPricing struct {
+	CostAnalysis
+	SellingPrice float64 `json:"selling_price"`
+}
+
+// BulkPriceUpdate represents a bulk price adjustment request.
+type BulkPriceUpdate struct {
+	IDs             []int   `json:"ids"`
+	AdjustmentType  string  `json:"adjustment_type"`
+	AdjustmentValue float64 `json:"adjustment_value"`
+}
+
 var _ = time.Now // keep time imported

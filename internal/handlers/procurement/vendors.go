@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"zrp/internal/audit"
 	"zrp/internal/models"
 	"zrp/internal/response"
 	"zrp/internal/validation"
@@ -94,8 +93,8 @@ func (h *Handler) CreateVendor(w http.ResponseWriter, r *http.Request) {
 		response.Err(w, err.Error(), 500)
 		return
 	}
-	username := audit.GetUsername(h.DB, r)
-	audit.LogAudit(h.DB, h.Hub, username, "created", "vendor", v.ID, "Created vendor "+v.Name)
+	username := h.GetUsername(r)
+	h.LogAudit(username, "created", "vendor", v.ID, "Created vendor "+v.Name)
 	h.RecordChangeJSON(username, "vendors", v.ID, "create", nil, v)
 	response.JSON(w, v)
 }
@@ -129,8 +128,8 @@ func (h *Handler) UpdateVendor(w http.ResponseWriter, r *http.Request, id string
 		response.Err(w, err.Error(), 500)
 		return
 	}
-	username := audit.GetUsername(h.DB, r)
-	audit.LogAudit(h.DB, h.Hub, username, "updated", "vendor", id, "Updated vendor "+v.Name)
+	username := h.GetUsername(r)
+	h.LogAudit(username, "updated", "vendor", id, "Updated vendor "+v.Name)
 	newSnap, _ := h.GetVendorSnapshot(id)
 	h.RecordChangeJSON(username, "vendors", id, "update", oldSnap, newSnap)
 	h.GetVendor(w, r, id)
@@ -155,14 +154,14 @@ func (h *Handler) DeleteVendor(w http.ResponseWriter, r *http.Request, id string
 	// Snapshot for change_history
 	oldSnap, _ := h.GetVendorSnapshot(id)
 
-	username := audit.GetUsername(h.DB, r)
+	username := h.GetUsername(r)
 	undoID, _ := h.CreateUndoEntry(username, "delete", "vendor", id)
 	_, err := h.DB.Exec("DELETE FROM vendors WHERE id=?", id)
 	if err != nil {
 		response.Err(w, err.Error(), 500)
 		return
 	}
-	audit.LogAudit(h.DB, h.Hub, username, "deleted", "vendor", id, "Deleted vendor "+id)
+	h.LogAudit(username, "deleted", "vendor", id, "Deleted vendor "+id)
 	changeID, _ := h.RecordChangeJSON(username, "vendors", id, "delete", oldSnap, nil)
 	resp := map[string]interface{}{"deleted": id}
 	if undoID > 0 {
