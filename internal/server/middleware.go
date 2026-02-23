@@ -26,6 +26,16 @@ func (w GzipResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
+// WriteHeader ensures that Content-Encoding is set to gzip, even if downstream handlers
+// (like http.ServeFile's error path) might have reset headers.
+func (w GzipResponseWriter) WriteHeader(code int) {
+	w.Header().Del("Content-Length")
+	if w.Header().Get("Content-Encoding") == "" {
+		w.Header().Set("Content-Encoding", "gzip")
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
 // GzipMiddleware compresses responses when client supports gzip.
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
