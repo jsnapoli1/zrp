@@ -89,6 +89,13 @@ func (h *Hub) Broadcast(evt Event) {
 	}
 }
 
+// ClientCount returns the number of connected clients.
+func (h *Hub) ClientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
+}
+
 // BroadcastChange is a convenience helper for broadcasting resource changes.
 func (h *Hub) BroadcastChange(resourceType, action string, id any) {
 	h.Broadcast(Event{

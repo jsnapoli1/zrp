@@ -30,9 +30,7 @@ func TestWebSocketUpgrade(t *testing.T) {
 	defer conn.Close()
 
 	// Should be registered in hub
-	wsHub.mu.RLock()
-	count := len(wsHub.clients)
-	wsHub.mu.RUnlock()
+	count := wsHub.ClientCount()
 	if count < 1 {
 		t.Errorf("expected at least 1 client in hub, got %d", count)
 	}
@@ -123,9 +121,7 @@ func TestHubClientRegistration(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	wsHub.mu.RLock()
-	count := len(wsHub.clients)
-	wsHub.mu.RUnlock()
+	count := wsHub.ClientCount()
 	if count < 2 {
 		t.Errorf("expected at least 2 clients, got %d", count)
 	}
@@ -175,17 +171,13 @@ func TestHubDisconnectCleanup(t *testing.T) {
 	conn, _, _ := websocket.DefaultDialer.Dial(wsURL, nil)
 	time.Sleep(50 * time.Millisecond)
 
-	wsHub.mu.RLock()
-	before := len(wsHub.clients)
-	wsHub.mu.RUnlock()
+	before := wsHub.ClientCount()
 
 	conn.Close()
 	// Give the read loop time to detect closure and unregister
 	time.Sleep(200 * time.Millisecond)
 
-	wsHub.mu.RLock()
-	after := len(wsHub.clients)
-	wsHub.mu.RUnlock()
+	after := wsHub.ClientCount()
 
 	if after >= before {
 		t.Errorf("expected client count to decrease after disconnect: before=%d after=%d", before, after)
