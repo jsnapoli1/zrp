@@ -49,6 +49,7 @@ func main() {
 	InitQueryProfiler(true, 100)
 	log.Println("Query profiler enabled with 100ms threshold")
 	
+	initAdminHandler()
 	initNotificationPrefsTable()
 	if err := initPermissionsTable(); err != nil {
 		log.Fatal("Permissions init failed:", err)

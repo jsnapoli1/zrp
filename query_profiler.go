@@ -195,6 +195,26 @@ func (p *QueryProfiler) GetStats() map[string]interface{} {
 	}
 }
 
+// SlowThresholdString returns the slow query threshold as a string.
+func (p *QueryProfiler) SlowThresholdString() string {
+	return p.slowThreshold.String()
+}
+
+// GetStatsMap returns stats as map[string]interface{} (satisfies admin.QueryProfiler).
+func (p *QueryProfiler) GetStatsMap() map[string]interface{} {
+	return p.GetStats()
+}
+
+// GetSlowQueriesAny returns slow queries as interface{} (satisfies admin.QueryProfiler).
+func (p *QueryProfiler) GetSlowQueriesAny() interface{} {
+	return p.GetSlowQueries()
+}
+
+// GetAllQueriesAny returns all queries as interface{} (satisfies admin.QueryProfiler).
+func (p *QueryProfiler) GetAllQueriesAny() interface{} {
+	return p.GetAllQueries()
+}
+
 // Reset clears all recorded queries
 func (p *QueryProfiler) Reset() {
 	p.mu.Lock()

@@ -1,257 +1,68 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
-	"strconv"
-	"strings"
 
-	"golang.org/x/crypto/bcrypt"
+	"zrp/internal/handlers/admin"
 )
 
-type UserFull struct {
-	ID          int     `json:"id"`
-	Username    string  `json:"username"`
-	DisplayName string  `json:"display_name"`
-	Role        string  `json:"role"`
-	Active      int     `json:"active"`
-	CreatedAt   string  `json:"created_at"`
-	LastLogin   *string `json:"last_login"`
+// Type aliases for backward compatibility.
+type UserFull = admin.UserFull
+type CreateUserRequest = admin.CreateUserRequest
+type UpdateUserRequest = admin.UpdateUserRequest
+type ResetPasswordRequest = admin.ResetPasswordRequest
+
+// adminHandler is the shared admin handler instance.
+var adminHandler *admin.Handler
+
+func initAdminHandler() {
+	adminHandler = &admin.Handler{
+		DB:       db,
+		Hub:      wsHub,
+		Profiler: profiler,
+	}
 }
 
-type CreateUserRequest struct {
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	Role        string `json:"role"`
-}
-
-type UpdateUserRequest struct {
-	DisplayName string `json:"display_name"`
-	Role        string `json:"role"`
-	Active      *int   `json:"active"`
-}
-
-type ResetPasswordRequest struct {
-	Password string `json:"password"`
+// getAdminHandler returns the admin handler, lazily initializing if needed (for tests).
+func getAdminHandler() *admin.Handler {
+	if adminHandler == nil || adminHandler.DB != db {
+		var p admin.QueryProfiler
+		if profiler != nil {
+			p = profiler
+		}
+		adminHandler = &admin.Handler{
+			DB:       db,
+			Hub:      wsHub,
+			Profiler: p,
+		}
+	}
+	return adminHandler
 }
 
 func getCurrentUser(r *http.Request) *UserFull {
-	cookie, err := r.Cookie("zrp_session")
-	if err != nil {
-		return nil
-	}
-	var u UserFull
-	var lastLogin *string
-	err = db.QueryRow(`SELECT u.id, u.username, u.display_name, u.role, u.active, u.created_at, u.last_login
-		FROM sessions s JOIN users u ON s.user_id = u.id
-		WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP`, cookie.Value).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Active, &u.CreatedAt, &lastLogin)
-	if err != nil {
-		return nil
-	}
-	u.LastLogin = lastLogin
-	return &u
+	return getAdminHandler().GetCurrentUser(r)
 }
 
 func requireAdmin(w http.ResponseWriter, r *http.Request) *UserFull {
-	u := getCurrentUser(r)
-	if u == nil {
-		jsonErr(w, "Unauthorized", 401)
-		return nil
-	}
-	if u.Role != "admin" {
-		jsonErr(w, "Admin access required", 403)
-		return nil
-	}
-	return u
+	return getAdminHandler().RequireAdmin(w, r)
 }
 
 func handleListUsers(w http.ResponseWriter, r *http.Request) {
-	if requireAdmin(w, r) == nil {
-		return
-	}
-	rows, err := db.Query(`SELECT id, username, display_name, role, active, created_at, last_login FROM users ORDER BY id`)
-	if err != nil {
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	defer rows.Close()
-	var users []UserFull
-	for rows.Next() {
-		var u UserFull
-		var lastLogin *string
-		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Active, &u.CreatedAt, &lastLogin); err != nil {
-			continue
-		}
-		u.LastLogin = lastLogin
-		users = append(users, u)
-	}
-	if users == nil {
-		users = []UserFull{}
-	}
-	jsonResp(w, users)
+	getAdminHandler().ListUsers(w, r)
 }
 
 func handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	if requireAdmin(w, r) == nil {
-		return
-	}
-	var req CreateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonErr(w, "Invalid request body", 400)
-		return
-	}
-	if req.Username == "" || req.Password == "" {
-		jsonErr(w, "Username and password required", 400)
-		return
-	}
-	
-	ve := &ValidationErrors{}
-	validateMaxLength(ve, "username", req.Username, 100)
-	validateMaxLength(ve, "display_name", req.DisplayName, 255)
-	validateMaxLength(ve, "email", req.Email, 255)
-	validateEmail(ve, "email", req.Email)
-	if ve.HasErrors() { jsonErr(w, ve.Error(), 400); return }
-	
-	// Validate password strength
-	if err := ValidatePasswordStrength(req.Password); err != nil {
-		jsonErr(w, err.Error(), 400)
-		return
-	}
-
-	validRoles := map[string]bool{"admin": true, "user": true, "readonly": true}
-	if !validRoles[req.Role] {
-		req.Role = "user"
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		jsonErr(w, "Failed to hash password", 500)
-		return
-	}
-	result, err := db.Exec(`INSERT INTO users (username, password_hash, display_name, email, role, active) VALUES (?, ?, ?, ?, ?, 1)`,
-		req.Username, string(hash), req.DisplayName, req.Email, req.Role)
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			jsonErr(w, "Username already exists", 409)
-			return
-		}
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	id, _ := result.LastInsertId()
-	
-	// Add initial password to history
-	AddPasswordHistory(int(id), string(hash))
-	
-	w.WriteHeader(201)
-	jsonResp(w, map[string]interface{}{"id": id, "username": req.Username, "display_name": req.DisplayName, "role": req.Role})
+	getAdminHandler().CreateUser(w, r)
 }
 
 func handleUpdateUser(w http.ResponseWriter, r *http.Request, idStr string) {
-	admin := requireAdmin(w, r)
-	if admin == nil {
-		return
-	}
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		jsonErr(w, "Invalid user ID", 400)
-		return
-	}
-	var req UpdateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonErr(w, "Invalid request body", 400)
-		return
-	}
-	// Admin can't deactivate themselves
-	if req.Active != nil && *req.Active == 0 && id == admin.ID {
-		jsonErr(w, "Cannot deactivate yourself", 400)
-		return
-	}
-	validRoles := map[string]bool{"admin": true, "user": true, "readonly": true}
-	if !validRoles[req.Role] {
-		req.Role = "user"
-	}
-	active := 1
-	if req.Active != nil {
-		active = *req.Active
-	}
-	result, err := db.Exec(`UPDATE users SET display_name = ?, role = ?, active = ? WHERE id = ?`,
-		req.DisplayName, req.Role, active, id)
-	if err != nil {
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		jsonErr(w, "User not found", 404)
-		return
-	}
-	jsonResp(w, map[string]string{"status": "updated"})
+	getAdminHandler().UpdateUser(w, r, idStr)
 }
 
 func handleDeleteUser(w http.ResponseWriter, r *http.Request, idStr string) {
-	admin := requireAdmin(w, r)
-	if admin == nil {
-		return
-	}
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		jsonErr(w, "Invalid user ID", 400)
-		return
-	}
-	if id == admin.ID {
-		jsonErr(w, "Cannot delete yourself", 400)
-		return
-	}
-	res, err := db.Exec("DELETE FROM users WHERE id = ?", id)
-	if err != nil {
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		jsonErr(w, "User not found", 404)
-		return
-	}
-	// Clean up sessions
-	db.Exec("DELETE FROM sessions WHERE user_id = ?", id)
-	jsonResp(w, map[string]string{"status": "deleted"})
+	getAdminHandler().DeleteUser(w, r, idStr)
 }
 
 func handleResetPassword(w http.ResponseWriter, r *http.Request, idStr string) {
-	if requireAdmin(w, r) == nil {
-		return
-	}
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		jsonErr(w, "Invalid user ID", 400)
-		return
-	}
-	var req ResetPasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonErr(w, "Invalid request body", 400)
-		return
-	}
-	if req.Password == "" {
-		jsonErr(w, "Password required", 400)
-		return
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		jsonErr(w, "Failed to hash password", 500)
-		return
-	}
-	result, err := db.Exec("UPDATE users SET password_hash = ? WHERE id = ?", string(hash), id)
-	if err != nil {
-		jsonErr(w, err.Error(), 500)
-		return
-	}
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		jsonErr(w, "User not found", 404)
-		return
-	}
-	jsonResp(w, map[string]string{"status": "password_reset"})
+	getAdminHandler().ResetPassword(w, r, idStr)
 }
