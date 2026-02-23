@@ -12,10 +12,12 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY *.go ./
+COPY internal/ internal/
+COPY cmd/ cmd/
 COPY static/ static/
 COPY templates/ templates/
 COPY --from=frontend /app/frontend/dist frontend/dist
-RUN CGO_ENABLED=0 go build -o zrp .
+RUN CGO_ENABLED=0 go build -o zrp ./cmd/zrp
 
 # Stage 3: Runtime
 FROM alpine:latest

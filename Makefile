@@ -8,11 +8,11 @@ css-watch:
 
 # Standard build (for development)
 build:
-	go build -o zrp .
+	go build -o zrp ./cmd/zrp
 
 # Optimized build (production) - strips symbols and debug info, removes file paths
 build-optimized:
-	go build -ldflags="-s -w" -trimpath -o zrp .
+	go build -ldflags="-s -w" -trimpath -o zrp ./cmd/zrp
 
 run: css build
 	./zrp

@@ -33,7 +33,7 @@ echo ""
 
 # Step 3: Rebuild backend
 echo -e "${BLUE}Step 3: Rebuilding backend...${NC}"
-go build -o zrp .
+go build -o zrp ./cmd/zrp
 echo -e "${GREEN}✓ Backend rebuilt${NC}"
 echo ""
 

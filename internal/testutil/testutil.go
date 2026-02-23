@@ -101,7 +101,9 @@ func createTables(t *testing.T, db *sql.DB) {
 			notes TEXT DEFAULT '',
 			created_by TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			valid_until TEXT DEFAULT '',
+			accepted_at DATETIME
 		)`},
 		{"quote_lines", `CREATE TABLE IF NOT EXISTS quote_lines (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -312,6 +314,7 @@ func createTables(t *testing.T, db *sql.DB) {
 			qty INTEGER DEFAULT 1 CHECK(qty > 0),
 			work_order_id TEXT DEFAULT '',
 			rma_id TEXT DEFAULT '',
+			sales_order_id TEXT DEFAULT '',
 			FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
 		)`},
 		{"pack_lists", `CREATE TABLE IF NOT EXISTS pack_lists (
