@@ -6,13 +6,9 @@ package main
 
 import (
 	"encoding/csv"
-	"fmt"
 	"net/http"
-	"strings"
 
 	"zrp/internal/handlers/common"
-
-	"github.com/xuri/excelize/v2"
 )
 
 // Type aliases for types now in the common package.
@@ -203,75 +199,11 @@ func getNotificationPrefsForUser(userID int) []NotificationPreference {
 // --- Export function wrappers ---
 
 func exportCSV(w http.ResponseWriter, filename string, headers []string, data [][]string) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-
-	writer := csv.NewWriter(w)
-	defer writer.Flush()
-
-	if err := writer.Write(headers); err != nil {
-		http.Error(w, "Failed to write CSV headers", 500)
-		return
-	}
-
-	for _, row := range data {
-		if err := writer.Write(row); err != nil {
-			http.Error(w, "Failed to write CSV row", 500)
-			return
-		}
-	}
+	common.ExportCSV(w, filename, headers, data)
 }
 
 func exportExcel(w http.ResponseWriter, sheetName string, headers []string, data [][]string) {
-	f := excelize.NewFile()
-	defer f.Close()
-
-	index, err := f.NewSheet(sheetName)
-	if err != nil {
-		http.Error(w, "Failed to create Excel sheet", 500)
-		return
-	}
-
-	f.SetActiveSheet(index)
-
-	headerStyle, err := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"#D3D3D3"}, Pattern: 1},
-	})
-	if err != nil {
-		http.Error(w, "Failed to create header style", 500)
-		return
-	}
-
-	for i, header := range headers {
-		cell := fmt.Sprintf("%s1", string(rune('A'+i)))
-		f.SetCellValue(sheetName, cell, header)
-		f.SetCellStyle(sheetName, cell, cell, headerStyle)
-	}
-
-	for rowIdx, row := range data {
-		for colIdx, value := range row {
-			cell := fmt.Sprintf("%s%d", string(rune('A'+colIdx)), rowIdx+2)
-			f.SetCellValue(sheetName, cell, value)
-		}
-	}
-
-	for i := range headers {
-		col := string(rune('A' + i))
-		f.SetColWidth(sheetName, col, col, 15)
-	}
-
-	if sheetName != "Sheet1" {
-		f.DeleteSheet("Sheet1")
-	}
-
-	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.xlsx", strings.ToLower(sheetName)))
-
-	if err := f.Write(w); err != nil {
-		http.Error(w, "Failed to write Excel file", 500)
-		return
-	}
+	common.ExportExcel(w, sheetName, headers, data)
 }
 
 // --- Search function wrappers ---
